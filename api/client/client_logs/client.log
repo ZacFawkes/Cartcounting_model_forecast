@@ -1,0 +1,102 @@
+20:29:43 | INFO    | client | Server ready (model cart-forecast-20261012-121335)
+20:29:43 | INFO    | client | POST /backtest  [audited_default]
+20:29:44 | INFO    | client |   -> audited_default events 13->2 | severity -94.6% | 7 trips, 125 carts | run bt-20261012-132944-95c9b5
+20:29:44 | INFO    | client | POST /backtest  [pre_audit_policy]
+20:29:44 | INFO    | client |   -> pre_audit_policy events 13->2 | severity -94.6% | 10 trips, 135 carts | run bt-20261012-132944-505761
+20:29:44 | INFO    | client | POST /backtest  [closed_loop]
+20:30:03 | INFO    | client |   -> closed_loop events 13->4 | severity -82.5% | 7 trips, 106 carts | run bt-20261012-133003-a14606
+20:30:03 | INFO    | client | POST /backtest  [best_case]
+20:30:04 | INFO    | client |   -> best_case events 13->1 | severity -98.3% | 2 trips, 28 carts | run bt-20261012-133004-c5107f
+20:30:04 | INFO    | client | POST /backtest  [conservative]
+20:30:04 | INFO    | client |   -> conservative events 13->12 | severity -4.2% | 9 trips, 135 carts | run bt-20261012-133004-1cdc24
+20:30:04 | INFO    | client | POST /backtest  [low_workload]
+20:30:04 | INFO    | client |   -> low_workload events 13->2 | severity -94.6% | 7 trips, 127 carts | run bt-20261012-133004-1ff205
+20:30:04 | INFO    | client | ------------------------------------------------------------------------------
+20:30:04 | INFO    | client | 
+        scenario  baseline_events  policy_events  severity_reduction_pct  actions  carts_moved  mae_min_40min
+ audited_default               13              2                 94.5833        7          125         2.9713
+pre_audit_policy               13              2                 94.5833       10          135         2.9713
+     closed_loop               13              4                 82.5000        7          106         2.9713
+       best_case               13              1                 98.3333        2           28         2.9713
+    conservative               13             12                  4.1667        9          135         2.9713
+    low_workload               13              2                 94.5833        7          127         2.9713
+20:30:04 | INFO    | client | Client results written to /Users/Zac/PycharmProjects/Cartcounting_model_forecast/api/client/client_logs/fake_backtest_results.csv
+20:30:04 | INFO    | client | Server-side log: api/logs/backtest_results.csv (+ logs/runs/<run_id>/)
+20:30:12 | INFO    | client | Server ready (model cart-forecast-20261012-121335)
+20:30:12 | INFO    | client | Streaming 85 records to /score (history window 20)
+20:30:12 | INFO    | client | 2026-10-11T10:53 | cart=22 risk=0.76 -> RETRIEVE 16 carts by 11:03 [URGENT]
+20:30:13 | INFO    | client | 2026-10-11T12:56 | cart=13 risk=0.91 -> RETRIEVE 19 carts by 13:06 [URGENT]
+20:30:13 | INFO    | client | 2026-10-11T13:29 | cart=6 risk=0.89 -> RETRIEVE 19 carts by 13:39 [HIGH]
+20:30:14 | INFO    | client | 2026-10-11T15:10 | cart=11 risk=0.99 -> RETRIEVE 20 carts by 15:20 [HIGH]
+20:30:15 | INFO    | client | 2026-10-11T16:06 | cart=9 risk=0.94 -> RETRIEVE 20 carts by 16:16 [URGENT]
+20:30:16 | INFO    | client | 2026-10-11T17:43 | cart=7 risk=0.82 -> RETRIEVE 17 carts by 17:53 [HIGH]
+20:30:17 | INFO    | client | ------------------------------------------------------------------------
+20:30:17 | INFO    | client | Calls: 85 | replenishment orders: 6 | carts: 111 | alerts: 6
+20:30:17 | INFO    | client | Records observed below RED: 1
+20:30:17 | INFO    | client | Client results written to /Users/Zac/PycharmProjects/Cartcounting_model_forecast/api/client/client_logs/fake_score_stream.csv
+20:30:17 | INFO    | client | Server-side log: api/logs/score_results.csv
+20:33:08 | INFO    | client | ==============================================================================
+20:33:08 | INFO    | client | STEP 1 — health check
+20:33:08 | INFO    | client | Server ready (model cart-forecast-20261012-121335)
+20:33:08 | INFO    | client | {'status': 'ok', 'version': '1.0.0', 'model_loaded': True, 'model_version': 'cart-forecast-20261012-121335', 'uptime_seconds': 220.1}
+20:33:08 | INFO    | client | ==============================================================================
+20:33:08 | INFO    | client | STEP 2 — model info
+20:33:08 | INFO    | client | model=cart-forecast-20261012-121335 features=127
+20:33:08 | INFO    | client | selected models: {'y_cart_3': 'LightGBM', 'y_cart_6': 'LightGBM', 'y_min_3': 'Ridge', 'y_min_6': 'Ridge'}
+20:33:08 | INFO    | client | served policy: {'red_threshold': 15.0, 'amber_threshold': 20.0, 'target_stock': 28.0, 'risk_threshold': 0.55, 'lead_time_min': 10.0, 'cooldown_min': 30.0, 'min_carts_per_trip': 3, 'max_carts_per_trip': 20, 'quantity_rule': 'point', 'planning_horizon': 6}
+20:33:08 | INFO    | client | ==============================================================================
+20:33:08 | INFO    | client | STEP 3 — backtest scenarios
+20:33:08 | INFO    | client | Server ready (model cart-forecast-20261012-121335)
+20:33:08 | INFO    | client | POST /backtest  [audited_default]
+20:33:08 | INFO    | client |   -> audited_default events 13->2 | severity -94.6% | 7 trips, 125 carts | run bt-20261012-133308-343111
+20:33:08 | INFO    | client | POST /backtest  [pre_audit_policy]
+20:33:08 | INFO    | client |   -> pre_audit_policy events 13->2 | severity -94.6% | 10 trips, 135 carts | run bt-20261012-133308-93b8b2
+20:33:08 | INFO    | client | POST /backtest  [closed_loop]
+20:33:28 | INFO    | client |   -> closed_loop events 13->4 | severity -82.5% | 7 trips, 106 carts | run bt-20261012-133328-58e1bb
+20:33:28 | INFO    | client | POST /backtest  [best_case]
+20:33:28 | INFO    | client |   -> best_case events 13->1 | severity -98.3% | 2 trips, 28 carts | run bt-20261012-133328-1809a9
+20:33:28 | INFO    | client | POST /backtest  [conservative]
+20:33:28 | INFO    | client |   -> conservative events 13->12 | severity -4.2% | 9 trips, 135 carts | run bt-20261012-133328-68c093
+20:33:28 | INFO    | client | POST /backtest  [low_workload]
+20:33:28 | INFO    | client |   -> low_workload events 13->2 | severity -94.6% | 7 trips, 127 carts | run bt-20261012-133328-4948bd
+20:33:28 | INFO    | client | ------------------------------------------------------------------------------
+20:33:28 | INFO    | client | 
+        scenario  baseline_events  policy_events  severity_reduction_pct  actions  carts_moved  mae_min_40min
+ audited_default               13              2                 94.5833        7          125         2.9713
+pre_audit_policy               13              2                 94.5833       10          135         2.9713
+     closed_loop               13              4                 82.5000        7          106         2.9713
+       best_case               13              1                 98.3333        2           28         2.9713
+    conservative               13             12                  4.1667        9          135         2.9713
+    low_workload               13              2                 94.5833        7          127         2.9713
+20:33:28 | INFO    | client | Client results written to /Users/Zac/PycharmProjects/Cartcounting_model_forecast/api/client/client_logs/fake_backtest_results.csv
+20:33:28 | INFO    | client | Server-side log: api/logs/backtest_results.csv (+ logs/runs/<run_id>/)
+20:33:28 | INFO    | client | ==============================================================================
+20:33:28 | INFO    | client | STEP 4 — live scoring stream
+20:33:28 | INFO    | client | Server ready (model cart-forecast-20261012-121335)
+20:33:28 | INFO    | client | Streaming 85 records to /score (history window 20)
+20:33:28 | INFO    | client | 2026-10-11T10:53 | cart=22 risk=0.76 -> RETRIEVE 16 carts by 11:03 [URGENT]
+20:33:29 | INFO    | client | 2026-10-11T12:56 | cart=13 risk=0.91 -> RETRIEVE 19 carts by 13:06 [URGENT]
+20:33:30 | INFO    | client | 2026-10-11T13:29 | cart=6 risk=0.89 -> RETRIEVE 19 carts by 13:39 [HIGH]
+20:33:31 | INFO    | client | 2026-10-11T15:10 | cart=11 risk=0.99 -> RETRIEVE 20 carts by 15:20 [HIGH]
+20:33:31 | INFO    | client | 2026-10-11T16:06 | cart=9 risk=0.94 -> RETRIEVE 20 carts by 16:16 [URGENT]
+20:33:32 | INFO    | client | 2026-10-11T17:43 | cart=7 risk=0.82 -> RETRIEVE 17 carts by 17:53 [HIGH]
+20:33:33 | INFO    | client | ------------------------------------------------------------------------
+20:33:33 | INFO    | client | Calls: 85 | replenishment orders: 6 | carts: 111 | alerts: 6
+20:33:33 | INFO    | client | Records observed below RED: 1
+20:33:33 | INFO    | client | Client results written to /Users/Zac/PycharmProjects/Cartcounting_model_forecast/api/client/client_logs/fake_score_stream.csv
+20:33:33 | INFO    | client | Server-side log: api/logs/score_results.csv
+20:33:33 | INFO    | client | ==============================================================================
+20:33:33 | INFO    | client | STEP 5 — online session state
+20:33:33 | INFO    | client | {'sessions': [{'session_id': 'fake-live-stream', 'calls': 85, 'surplus': 34.0, 'pending_orders': 0, 'pending_carts': 0.0, 'completed_orders': 6, 'alert_state': 'NORMAL', 'last_record_time': '2026-10-11 20:03:39'}]}
+20:33:33 | INFO    | client | ==============================================================================
+20:33:33 | INFO    | client | STEP 6 — server-side logs
+20:33:33 | INFO    | client | requests   last 5 entries recorded server-side
+20:33:33 | INFO    | client | scores     last 5 entries recorded server-side
+20:33:33 | INFO    | client | backtests  last 5 entries recorded server-side
+20:33:33 | INFO    | client | ==============================================================================
+20:33:33 | INFO    | client | Demo complete.
+20:33:33 | INFO    | client |   backtest scenarios run : 6
+20:33:33 | INFO    | client |   scoring calls made     : 85
+20:33:33 | INFO    | client |   replenishment orders   : 6
+20:33:33 | INFO    | client |   client logs            : /Users/Zac/PycharmProjects/Cartcounting_model_forecast/api/client/client_logs
+20:33:33 | INFO    | client |   server logs            : api/logs/

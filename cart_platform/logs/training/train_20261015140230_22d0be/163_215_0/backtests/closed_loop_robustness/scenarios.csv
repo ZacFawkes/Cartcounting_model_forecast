@@ -1,0 +1,5 @@
+scenario,description,mode,consumption_model,usage,reserve,lead_time_min,risk_threshold,target_stock,baseline_events,policy_events,event_reduction_pct,duration_reduction_pct,severity_reduction_pct,n_replenishment_actions,total_carts_recommended,trips_per_day,policy_cost_J,ledger_conserved
+closed_loop_audited_default,"Closed loop, audited base-case assumptions",closed_loop,unmet_demand,MEDIUM,LIMITED,10.0,0.1892430278884462,28.0,17,16,5.882353,30.430061,33.587786,5,56,1.890723,1528.8,True
+audited_default,Audited base-case assumptions,replay,unmet_demand,MEDIUM,LIMITED,10.0,0.1892430278884462,28.0,17,1,94.117647,94.200695,96.183206,9,137,3.403302,1064.8,True
+best_case,"Short lead time, persistent surplus, low cart usage",replay,persistent,LOW,LIMITED,5.0,0.1892430278884462,28.0,17,1,94.117647,94.200695,96.183206,3,37,1.134434,991.15,True
+conservative,"Long lead time, full turnover, high cart usage",replay,turnover,HIGH,LIMITED,20.0,0.1892430278884462,28.0,17,17,0.0,0.0,2.210077,13,158,4.91588,1931.745564,True

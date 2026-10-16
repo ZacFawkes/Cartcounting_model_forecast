@@ -1,0 +1,7 @@
+scenario,label,entity_id,run_id,mode,records,baseline_events,policy_events,event_reduction_pct,duration_reduction_pct,severity_reduction_pct,actions,carts_moved,trips_per_day,policy_cost_J,mae_min_40min,lower_bound_coverage,prevented_onset,reduced_duration_only,conserved,n_warnings
+entity_defaults,Entity registry defaults (no overrides),215:0,bt-215_0-20261012-145109-41bf9,replay,429,15,2,86.6667,95.7311,97.2222,7,135,3.1103,465.6,2.9713,0.9451,5,9,True,5
+audited_default,"Audited re-optimised policy, base-case assumptions",215:0,bt-215_0-20261012-145109-82e17,replay,429,13,2,84.6154,93.3394,94.5833,7,124,3.1103,874.65,2.9713,0.9451,8,5,True,3
+pre_audit_policy,"Original pre-audit policy (risk 0.40, cooldown 10 min)",215:0,bt-215_0-20261012-145109-bd86d,replay,429,13,2,84.6154,93.3394,94.5833,10,135,4.4433,953.05,2.9713,0.9451,8,5,True,3
+closed_loop,"Audited policy, closed-loop simulation",215:0,bt-215_0-20261012-145128-f7e83,closed_loop,429,13,4,69.2308,84.9888,82.5,7,106,3.1103,950.25,2.9713,0.9451,7,6,True,3
+best_case,"Best case: 5-min lead, persistent surplus, low usage",215:0,bt-215_0-20261012-145128-2e74e,replay,429,13,1,92.3077,96.6697,99.1667,2,31,0.8887,774.15,2.9713,0.9451,2,11,True,3
+conservative,"Conservative: 20-min lead, full turnover, high usage",215:0,bt-215_0-20261012-145128-224e5,replay,429,13,13,0.0,0.0,0.0,9,135,3.999,1767.1478,2.9713,0.9451,0,3,True,3

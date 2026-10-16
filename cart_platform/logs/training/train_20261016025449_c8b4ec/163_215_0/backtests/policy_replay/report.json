@@ -1,0 +1,145 @@
+{
+  "report_id": "bt_poli_2c81c07a",
+  "backtest_type": "policy_replay",
+  "status": "completed",
+  "config_hash": "e8558f8116ef8674",
+  "frozen_model_config": {
+    "red_model": 5.0,
+    "amber_model": 20.0,
+    "feature_windows": [
+      3,
+      6,
+      9
+    ],
+    "primary_horizon": 3,
+    "planning_horizon": 6,
+    "calibration_red": 5.0
+  },
+  "effective_operational_config": {
+    "red_threshold": 5,
+    "amber_threshold": 20,
+    "target_stock": 28,
+    "bay_capacity": 60,
+    "lead_time_min": 10.0,
+    "cooldown_min": 30.0,
+    "min_carts_per_trip": 3,
+    "max_carts_per_trip": 20,
+    "quantity_rule": "point",
+    "reserve_per_day": 60,
+    "consumption_model": "unmet_demand",
+    "usage": "MEDIUM",
+    "retention_halflife_min": 45.0,
+    "max_sequence_gap_min": 15.0
+  },
+  "reason": null,
+  "job_id": "train_20261016025449_c8b4ec",
+  "entity_id": "163:215:0",
+  "model_id": "mdl_163_215_0_20261016025457_174a61",
+  "calibration_id": "cal_163_215_0_7f0d4fec",
+  "upload_id": "upl_20261015_e42925ba",
+  "metrics": {
+    "mode": "fixed_action_replay",
+    "usage_scenario": "MEDIUM",
+    "reserve_scenario": "LIMITED",
+    "consumption_model": "unmet_demand",
+    "risk_threshold": 0.071713,
+    "target_stock": 28.0,
+    "lead_time_min": 10.0,
+    "effective_lead_time_min": 10.0,
+    "max_carts_per_trip": 20,
+    "n_records": 509,
+    "span_days": 2.644491,
+    "baseline_events": 0,
+    "policy_events": 0,
+    "baseline_records_below_red": 0,
+    "policy_records_below_red": 0,
+    "baseline_shortage_minutes": 0.0,
+    "policy_shortage_minutes": 0.0,
+    "baseline_severity_cart_records": 0.0,
+    "policy_severity_cart_records": 0.0,
+    "baseline_excess_cart_records": 5396.0,
+    "policy_excess_cart_records": 7871.0,
+    "baseline_min_cart": 5.0,
+    "policy_min_cart": 10.5,
+    "baseline_mean_cart": 35.255403,
+    "policy_mean_cart": 42.335953,
+    "n_replenishment_actions": 7,
+    "n_orders_delivered": 7,
+    "n_orders_cancelled": 0,
+    "total_carts_recommended": 125,
+    "total_carts_delivered": 125.0,
+    "avg_carts_per_action": 17.857143,
+    "trips_per_day": 2.647012,
+    "carts_per_day": 47.26808,
+    "n_urgent": 0,
+    "n_capacity_constrained": 0,
+    "n_reserve_constrained": 0,
+    "n_skipped_cooldown": 28,
+    "n_skipped_pending": 0,
+    "event_reduction_pct": null,
+    "duration_reduction_pct": null,
+    "severity_reduction_pct": null,
+    "events_prevented": 0,
+    "policy_cost_J": 853.35,
+    "baseline_cost_J": 539.6,
+    "ledger_carts_delivered": 125.0,
+    "ledger_carts_consumed_by_customers": 97.5,
+    "ledger_carts_absorbed_by_capacity": 24.5,
+    "ledger_residual_surplus_at_end": 3.0,
+    "ledger_reserve_drawn": 125.0,
+    "ledger_balance_error": 0.0,
+    "ledger_conserved": true,
+    "attribution": {}
+  },
+  "assumptions": {
+    "mode": "replay",
+    "policy": {
+      "red_threshold": 5.0,
+      "amber_threshold": 20.0,
+      "target_stock": 28.0,
+      "risk_threshold": 0.071713,
+      "lead_time_min": 10.0,
+      "cooldown_min": 30.0,
+      "min_carts_per_trip": 3,
+      "max_carts_per_trip": 20,
+      "quantity_rule": "point",
+      "planning_horizon": 6
+    },
+    "inventory": {
+      "bay_capacity": 60.0,
+      "usage": "MEDIUM",
+      "reserve": "LIMITED",
+      "consumption_model": "unmet_demand",
+      "retention_halflife_min": 45.0
+    },
+    "cost_lambdas": {
+      "shortage": 10.0,
+      "trip": 5.0,
+      "cart": 0.25,
+      "excess": 0.1
+    },
+    "frozen_model_thresholds": {
+      "red_model": 5.0,
+      "amber_model": 20.0
+    },
+    "note": "operational thresholds drive the policy; the frozen model thresholds shaped the features and calibrator"
+  },
+  "caveat": "Replenishment benefits are simulation estimates conditional on documented assumptions, not observed reductions.",
+  "artifacts": [
+    {
+      "kind": "decisions_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261016025449_c8b4ec/163_215_0/backtests/policy_replay/decisions.csv"
+    },
+    {
+      "kind": "order_ledger_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261016025449_c8b4ec/163_215_0/backtests/policy_replay/order_ledger.csv"
+    },
+    {
+      "kind": "event_attribution_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261016025449_c8b4ec/163_215_0/backtests/policy_replay/event_attribution.csv"
+    }
+  ],
+  "window_start": "2026-10-09 14:33:01",
+  "window_end": "2026-10-12 05:04:12",
+  "created_at": "2026-10-16T02:54:58.010+00:00"
+}

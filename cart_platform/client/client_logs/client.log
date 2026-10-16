@@ -1,0 +1,329 @@
+21:51:09 | INFO    | client | ======================================================================================
+21:51:09 | INFO    | client | STEP 1 — health and bootstrap
+21:51:09 | WARNING | client | Server up but no model; bootstrapping…
+21:51:09 | INFO    | client | Server ready — model mdl-20261012-v1-c91aaa, 1 entities (1 active)
+21:51:09 | INFO    | client | {'status': 'ok', 'version': '2.0.0', 'model_loaded': True, 'champion_model_id': 'mdl-20261012-v1-c91aaa', 'n_entities': 1, 'n_active': 1, 'uptime_seconds': 11.5}
+21:51:09 | INFO    | client | ======================================================================================
+21:51:09 | INFO    | client | STEP 2 — model provenance
+21:51:09 | INFO    | client | model mdl-20261012-v1-c91aaa v1 | 127 features | grain KDVR:ChanNo
+21:51:09 | INFO    | client | feature-time thresholds (frozen): red=15 amber=20
+21:51:09 | INFO    | client | history: floor 10, enforced 12, recommended 20
+21:51:09 | INFO    | client | ======================================================================================
+21:51:09 | INFO    | client | STEP 3 — entity registry
+21:51:09 | INFO    | client |   215:0  site=163  status=active  red=18 amber=24 target=43 cap=61 (derived)
+21:51:09 | INFO    | client | ======================================================================================
+21:51:09 | INFO    | client | STEP 4 — resolved configuration for 215:0
+21:51:09 | INFO    | client |   amber_model              20             <- model_registry
+21:51:09 | INFO    | client |   amber_threshold          24             <- entity_config
+21:51:09 | INFO    | client |   bay_capacity             61             <- entity_config
+21:51:09 | INFO    | client |   consumption_model        unmet_demand   <- system_default
+21:51:09 | INFO    | client |   cooldown_min             20.0           <- system_default
+21:51:09 | INFO    | client |   lead_time_min            10.0           <- system_default
+21:51:09 | INFO    | client |   max_carts_per_trip       20             <- system_default
+21:51:09 | INFO    | client |   max_sequence_gap_min     15.0           <- system_default
+21:51:09 | INFO    | client |   min_carts_per_trip       3              <- system_default
+21:51:09 | INFO    | client |   quantity_rule            point          <- system_default
+21:51:09 | INFO    | client |   red_model                15             <- model_registry
+21:51:09 | INFO    | client |   red_threshold            18             <- entity_config
+21:51:09 | INFO    | client |   reserve_per_day          60             <- system_default
+21:51:09 | INFO    | client |   retention_halflife_min   45.0           <- system_default
+21:51:09 | INFO    | client |   risk_threshold           0.55           <- system_default
+21:51:09 | INFO    | client |   target_stock             43             <- entity_config
+21:51:09 | INFO    | client |   usage                    MEDIUM         <- system_default
+21:51:09 | WARNING | client |   ! red_threshold=18 differs from red_model=15; features were built with the trained threshold, while risk, alerts and quantity use 18. Retrain to change the feature-time threshold.
+21:51:09 | WARNING | client |   ! amber_threshold=24 differs from amber_model=20; features were built with the trained threshold, while risk, alerts and quantity use 24. Retrain to change the feature-time threshold.
+21:51:09 | WARNING | client |   ! thresholds are percentile-derived from history, not a business rule
+21:51:09 | WARNING | client |   ! using system defaults for unconfigured parameters: consumption_model, cooldown_min, lead_time_min, max_carts_per_trip, max_sequence_gap_min, min_carts_per_trip, quantity_rule, reserve_per_day, retention_halflife_min, risk_threshold, usage
+21:51:09 | WARNING | client |   ! reserve inventory is unknown; recommendations are conditionally feasible only
+21:51:09 | INFO    | client | ======================================================================================
+21:51:09 | INFO    | client | STEP 5 — backtest scenarios
+21:51:09 | INFO    | client | Server ready — model mdl-20261012-v1-c91aaa, 1 entities (1 active)
+21:51:09 | INFO    | client | POST /v1/backtest [entity_defaults]
+21:51:09 | INFO    | client |   entity_defaults 215:0: events 15->2 | severity -97.2% | 7 trips, 135 carts
+21:51:09 | INFO    | client | POST /v1/backtest [audited_default]
+21:51:09 | INFO    | client |   audited_default 215:0: events 13->2 | severity -94.6% | 7 trips, 124 carts
+21:51:09 | INFO    | client | POST /v1/backtest [pre_audit_policy]
+21:51:09 | INFO    | client |   pre_audit_policy 215:0: events 13->2 | severity -94.6% | 10 trips, 135 carts
+21:51:09 | INFO    | client | POST /v1/backtest [closed_loop]
+21:51:28 | INFO    | client |   closed_loop 215:0: events 13->4 | severity -82.5% | 7 trips, 106 carts
+21:51:28 | INFO    | client | POST /v1/backtest [best_case]
+21:51:28 | INFO    | client |   best_case 215:0: events 13->1 | severity -99.2% | 2 trips, 31 carts
+21:51:28 | INFO    | client | POST /v1/backtest [conservative]
+21:51:28 | INFO    | client |   conservative 215:0: events 13->13 | severity -0.0% | 9 trips, 135 carts
+21:51:28 | INFO    | client | --------------------------------------------------------------------------------------------
+21:51:28 | INFO    | client | 
+        scenario entity_id  baseline_events  policy_events  severity_reduction_pct  actions  carts_moved  mae_min_40min
+ entity_defaults     215:0               15              2                 97.2222        7          135         2.9713
+ audited_default     215:0               13              2                 94.5833        7          124         2.9713
+pre_audit_policy     215:0               13              2                 94.5833       10          135         2.9713
+     closed_loop     215:0               13              4                 82.5000        7          106         2.9713
+       best_case     215:0               13              1                 99.1667        2           31         2.9713
+    conservative     215:0               13             13                  0.0000        9          135         2.9713
+21:51:28 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/backtest_results.csv
+21:51:28 | INFO    | client | Server-side: backtest_runs table + logs/runs/<run_id>/
+21:51:28 | INFO    | client | ======================================================================================
+21:51:28 | INFO    | client | STEP 6 — live scoring stream
+21:51:28 | INFO    | client | Server ready — model mdl-20261012-v1-c91aaa, 1 entities (1 active)
+21:51:28 | INFO    | client | Streaming 85 records for 215:0 (history window 20)
+21:51:28 | INFO    | client | 215:0 | 2026-10-11T10:53 cart=22 risk=0.76 -> RETRIEVE 16 by 11:03 [URGENT]
+21:51:29 | INFO    | client | 215:0 | 2026-10-11T12:56 cart=13 risk=0.91 -> RETRIEVE 19 by 13:06 [URGENT]
+21:51:30 | INFO    | client | 215:0 | 2026-10-11T13:29 cart=6 risk=0.89 -> RETRIEVE 19 by 13:39 [HIGH]
+21:51:30 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 6 by 15:20 [HIGH]
+21:51:31 | INFO    | client | 215:0 | 2026-10-11T16:00 cart=12 risk=0.99 -> CRITICAL alert
+21:51:31 | INFO    | client | 215:0 | 2026-10-11T16:26 cart=14 risk=0.84 -> CRITICAL alert
+21:51:33 | INFO    | client | --------------------------------------------------------------------------
+21:51:33 | INFO    | client | Calls 85 | orders 4 | carts 60 | alerts 6 | below RED 12
+21:51:33 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/stream_215_0.csv
+21:51:33 | INFO    | client | Server write-back: scoring_results table (GET /v1/logs/scores)
+21:51:33 | INFO    | client | ======================================================================================
+21:51:33 | INFO    | client | STEP 7 — durable state and order ledger
+21:51:33 | INFO    | client | sessions: [{'entity_id': '215:0', 'surplus': 0.0, 'last_record_time': '2026-10-11 20:03:39', 'last_decision_time': '2026-10-11 15:10:03', 'alert_state': 'NORMAL', 'alert_streak': 0, 'last_alert_time': '2026-10-11 17:33:31', 'n_calls': 85, 'reserve_used_today': 60.0, 'reserve_day': '2026-10-11', 'updated_at': '2026-10-12T14:51:33.463+00:00', 'pending_orders': 0, 'pending_carts': 0}]
+21:51:33 | INFO    | client |   ORD-215_0-acf1a47a  2026-10-11 15:10  qty=6  status=COMPLETED  executed_by=None
+21:51:33 | INFO    | client |   ORD-215_0-5119ff19  2026-10-11 13:29  qty=19  status=COMPLETED  executed_by=None
+21:51:33 | INFO    | client |   ORD-215_0-e39ce74b  2026-10-11 12:56  qty=19  status=COMPLETED  executed_by=None
+21:51:33 | INFO    | client |   ORD-215_0-efdacb49  2026-10-11 10:53  qty=16  status=COMPLETED  executed_by=None
+21:51:33 | INFO    | client | ======================================================================================
+21:51:33 | INFO    | client | STEP 8 — log what staff actually did (the audit's blocking gap)
+21:51:33 | INFO    | client |   ORD-215_0-acf1a47a executed_by=demo-staff actual_carts=6
+21:51:33 | INFO    | client | ======================================================================================
+21:51:33 | INFO    | client | STEP 9 — entity-keyed logs
+21:51:33 | INFO    | client |   requests   91 entries for 215:0
+21:51:33 | INFO    | client |   scores     85 entries for 215:0
+21:51:33 | INFO    | client |   backtests  6 entries for 215:0
+21:51:33 | INFO    | client | ======================================================================================
+21:51:33 | INFO    | client | Demo complete.
+21:51:33 | INFO    | client |   backtest runs   : 6
+21:51:33 | INFO    | client |   scoring calls   : 85
+21:51:33 | INFO    | client |   orders issued   : 4
+21:51:33 | INFO    | client |   client logs     : /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs
+21:51:33 | INFO    | client |   server database : cart_platform/data/platform.db
+16:53:20 | INFO    | client | Server ready — model mdl_215_0_20261013043402_5f1924, 3 entities (3 active)
+16:53:20 | INFO    | client | Streaming 2523 records for 215:0 (history window 20)
+16:53:27 | INFO    | client | 215:0 | 2026-09-29T15:11 cart=21 risk=0.60 -> RETRIEVE 14 by 15:21 [URGENT]
+16:53:52 | INFO    | client | 215:0 | 2026-10-01T11:57 cart=15 risk=0.60 -> RETRIEVE 14 by 12:07 [URGENT]
+16:54:10 | INFO    | client | 215:0 | 2026-10-02T17:04 cart=6 risk=0.95 -> RETRIEVE 20 by 17:14 [URGENT]
+16:54:22 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+16:54:35 | INFO    | client | 215:0 | 2026-10-04T12:28 cart=9 risk=0.89 -> RETRIEVE 19 by 12:38 [URGENT]
+16:54:35 | INFO    | client | 215:0 | 2026-10-04T13:01 cart=12 risk=0.99 -> RETRIEVE 20 by 13:11 [URGENT]
+16:54:35 | INFO    | client | 215:0 | 2026-10-04T13:34 cart=7 risk=1.00 -> RETRIEVE 20 by 13:44 [URGENT]
+16:54:36 | INFO    | client | 215:0 | 2026-10-04T14:04 cart=9 risk=0.98 -> RETRIEVE 1 by 14:14 [URGENT]
+16:54:39 | INFO    | client | 215:0 | 2026-10-04T19:15 cart=16 risk=0.60 -> WARNING alert
+16:54:49 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.87 -> RETRIEVE 18 by 13:03 [URGENT]
+16:55:04 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [HIGH]
+16:55:17 | INFO    | client | 215:0 | 2026-10-07T18:33 cart=11 risk=0.61 -> RETRIEVE 15 by 18:43 [URGENT]
+16:55:30 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+16:55:40 | INFO    | client | 215:0 | 2026-10-09T11:59 cart=7 risk=0.93 -> RETRIEVE 20 by 12:09 [URGENT]
+16:55:56 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+16:56:07 | INFO    | client | 215:0 | 2026-10-11T12:06 cart=16 risk=0.85 -> RETRIEVE 17 by 12:16 [URGENT]
+16:56:08 | INFO    | client | 215:0 | 2026-10-11T13:23 cart=10 risk=0.94 -> RETRIEVE 20 by 13:33 [URGENT]
+16:56:09 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 20 by 15:20 [URGENT]
+16:56:09 | INFO    | client | 215:0 | 2026-10-11T16:00 cart=12 risk=0.96 -> RETRIEVE 3 by 16:10 [URGENT]
+16:56:10 | INFO    | client | 215:0 | 2026-10-11T16:36 cart=12 risk=0.81 -> CRITICAL alert
+16:56:17 | INFO    | client | --------------------------------------------------------------------------
+16:56:17 | INFO    | client | Calls 2523 | orders 18 | carts 290 | alerts 12 | below RED 48
+16:56:17 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/stream_215_0.csv
+16:56:17 | INFO    | client | Server write-back: scoring_results table (GET /v1/logs/scores)
+16:57:59 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013043402_5f1924
+16:58:06 | INFO    | client | 215:0 | 2026-09-29T15:11 cart=21 risk=0.60 -> RETRIEVE 14 by 15:21 [URGENT]
+16:58:31 | INFO    | client | 215:0 | 2026-10-01T11:57 cart=15 risk=0.60 -> RETRIEVE 14 by 12:07 [URGENT]
+16:58:48 | INFO    | client | 215:0 | 2026-10-02T17:04 cart=6 risk=0.95 -> RETRIEVE 20 by 17:14 [URGENT]
+16:59:00 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+16:59:13 | INFO    | client | 215:0 | 2026-10-04T12:28 cart=9 risk=0.89 -> RETRIEVE 19 by 12:38 [URGENT]
+16:59:13 | INFO    | client | 215:0 | 2026-10-04T13:01 cart=12 risk=0.99 -> RETRIEVE 20 by 13:11 [URGENT]
+16:59:13 | INFO    | client | 215:0 | 2026-10-04T13:34 cart=7 risk=1.00 -> RETRIEVE 20 by 13:44 [URGENT]
+16:59:14 | INFO    | client | 215:0 | 2026-10-04T14:04 cart=9 risk=0.98 -> RETRIEVE 1 by 14:14 [URGENT]
+16:59:27 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.87 -> RETRIEVE 18 by 13:03 [URGENT]
+16:59:43 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [HIGH]
+16:59:56 | INFO    | client | 215:0 | 2026-10-07T18:33 cart=11 risk=0.61 -> RETRIEVE 15 by 18:43 [URGENT]
+17:00:10 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+17:00:19 | INFO    | client | 215:0 | 2026-10-09T11:59 cart=7 risk=0.93 -> RETRIEVE 20 by 12:09 [URGENT]
+17:00:36 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+17:00:48 | INFO    | client | 215:0 | 2026-10-11T12:06 cart=16 risk=0.85 -> RETRIEVE 17 by 12:16 [URGENT]
+17:00:49 | INFO    | client | 215:0 | 2026-10-11T13:23 cart=10 risk=0.94 -> RETRIEVE 20 by 13:33 [URGENT]
+17:00:50 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 20 by 15:20 [URGENT]
+17:00:50 | INFO    | client | 215:0 | 2026-10-11T16:00 cart=12 risk=0.96 -> RETRIEVE 3 by 16:10 [URGENT]
+17:00:58 | INFO    | client | --------------------------------------------------------------------------
+17:00:58 | INFO    | client | Calls 2523 in 179.2s | orders 18 | carts 290 | alerts 12 | below RED 48
+17:00:58 | INFO    | client | Artifacts written: 2523 | replays: 2
+17:00:58 | INFO    | client | Models used: ['mdl_215_0_20261013043402_5f1924']
+17:00:58 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/entity_route_215_0_all.csv
+17:25:35 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013043402_5f1924
+17:28:31 | INFO    | client | --------------------------------------------------------------------------
+17:28:31 | INFO    | client | Calls 2523 in 176.4s | orders 0 | carts 0 | alerts 0 | below RED 135
+17:28:31 | INFO    | client | Artifacts written: 2523 | replays: 2523
+17:28:31 | INFO    | client | Models used: ['mdl_215_0_20261013043402_5f1924']
+17:28:31 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/entity_route_215_0_all.csv
+17:31:32 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013043402_5f1924
+17:34:21 | INFO    | client | --------------------------------------------------------------------------
+17:34:21 | INFO    | client | Calls 2523 in 169.6s | orders 0 | carts 0 | alerts 0 | below RED 135
+17:34:21 | INFO    | client | Artifacts written: 2523 | replays: 2523
+17:34:21 | INFO    | client | Models used: ['mdl_215_0_20261013043402_5f1924']
+17:34:21 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/entity_route_215_0_all.csv
+18:41:58 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013043402_5f1924
+19:05:54 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013113343_8b835e
+19:08:41 | INFO    | client | --------------------------------------------------------------------------
+19:08:41 | INFO    | client | Calls 2523 in 167.8s | orders 0 | carts 0 | alerts 0 | below RED 135
+19:08:41 | INFO    | client | Artifacts written: 2523 | replays: 2523
+19:08:41 | INFO    | client | Models used: ['mdl_215_0_20261013113343_8b835e']
+19:08:41 | INFO    | client | Client results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/entity_route_215_0_all.csv
+19:12:39 | INFO    | client | Entity route run | 215:0 | 2543 records | model mdl_215_0_20261013113343_8b835e
+21:54:03 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+21:54:07 | INFO    | client | 215:0 | 2026-09-29T11:07 cart=23 risk=0.14 -> RETRIEVE 8 by 11:17 [LOW]
+21:54:10 | INFO    | client | 215:0 | 2026-09-29T16:11 cart=21 risk=0.11 -> RETRIEVE 7 by 16:21 [LOW]
+21:54:10 | INFO    | client | 215:0 | 2026-09-29T16:41 cart=11 risk=0.16 -> RETRIEVE 9 by 16:51 [MEDIUM]
+21:54:22 | INFO    | client | 215:0 | 2026-09-30T12:51 cart=19 risk=0.23 -> RETRIEVE 10 by 13:01 [MEDIUM]
+21:54:25 | INFO    | client | 215:0 | 2026-09-30T18:11 cart=13 risk=0.39 -> RETRIEVE 13 by 18:21 [URGENT]
+21:54:34 | INFO    | client | 215:0 | 2026-10-01T11:51 cart=16 risk=0.10 -> RETRIEVE 7 by 12:01 [LOW]
+21:54:48 | INFO    | client | 215:0 | 2026-10-02T12:47 cart=18 risk=0.14 -> RETRIEVE 8 by 12:57 [LOW]
+21:54:51 | INFO    | client | 215:0 | 2026-10-02T17:04 cart=6 risk=0.95 -> RETRIEVE 20 by 17:14 [URGENT]
+21:55:01 | INFO    | client | 215:0 | 2026-10-03T10:31 cart=25 risk=0.11 -> RETRIEVE 7 by 10:41 [LOW]
+21:55:02 | INFO    | client | 215:0 | 2026-10-03T12:54 cart=14 risk=0.15 -> RETRIEVE 8 by 13:04 [LOW]
+21:55:03 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+21:55:15 | INFO    | client | 215:0 | 2026-10-04T12:08 cart=20 risk=0.12 -> RETRIEVE 7 by 12:18 [LOW]
+21:55:15 | INFO    | client | 215:0 | 2026-10-04T12:41 cart=14 risk=0.99 -> RETRIEVE 20 by 12:51 [URGENT]
+21:55:16 | INFO    | client | 215:0 | 2026-10-04T13:14 cart=7 risk=0.99 -> RETRIEVE 20 by 13:24 [URGENT]
+21:55:16 | INFO    | client | 215:0 | 2026-10-04T13:44 cart=4 risk=1.00 -> RETRIEVE 13 by 13:54 [URGENT]
+21:55:28 | INFO    | client | 215:0 | 2026-10-05T11:10 cart=30 risk=0.10 -> RETRIEVE 7 by 11:20 [LOW]
+21:55:29 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.27 -> RETRIEVE 11 by 13:03 [URGENT]
+21:55:41 | INFO    | client | 215:0 | 2026-10-06T14:10 cart=15 risk=0.13 -> RETRIEVE 8 by 14:20 [LOW]
+21:55:44 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [HIGH]
+21:55:54 | INFO    | client | 215:0 | 2026-10-07T12:49 cart=21 risk=0.11 -> RETRIEVE 7 by 12:59 [LOW]
+21:55:57 | INFO    | client | 215:0 | 2026-10-07T18:20 cart=12 risk=0.51 -> RETRIEVE 14 by 18:30 [URGENT]
+21:56:07 | INFO    | client | 215:0 | 2026-10-08T12:19 cart=11 risk=0.18 -> RETRIEVE 10 by 12:29 [MEDIUM]
+21:56:09 | INFO    | client | 215:0 | 2026-10-08T13:53 cart=9 risk=0.12 -> RETRIEVE 8 by 14:03 [LOW]
+21:56:11 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+21:56:20 | INFO    | client | 215:0 | 2026-10-09T10:52 cart=20 risk=0.10 -> RETRIEVE 7 by 11:02 [LOW]
+21:56:20 | INFO    | client | 215:0 | 2026-10-09T11:46 cart=7 risk=0.11 -> RETRIEVE 7 by 11:56 [LOW]
+21:56:21 | INFO    | client | 215:0 | 2026-10-09T13:09 cart=22 risk=0.10 -> RETRIEVE 7 by 13:19 [LOW]
+21:56:34 | INFO    | client | 215:0 | 2026-10-10T11:39 cart=21 risk=0.14 -> RETRIEVE 8 by 11:49 [LOW]
+21:56:37 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+21:56:38 | INFO    | client | 215:0 | 2026-10-10T17:33 cart=18 risk=0.11 -> RETRIEVE 7 by 17:43 [LOW]
+21:56:48 | INFO    | client | 215:0 | 2026-10-11T10:53 cart=22 risk=0.15 -> RETRIEVE 9 by 11:03 [MEDIUM]
+21:56:49 | INFO    | client | 215:0 | 2026-10-11T12:06 cart=16 risk=0.11 -> RETRIEVE 7 by 12:16 [LOW]
+21:56:49 | INFO    | client | 215:0 | 2026-10-11T12:56 cart=13 risk=0.32 -> RETRIEVE 12 by 13:06 [MEDIUM]
+21:56:49 | INFO    | client | 215:0 | 2026-10-11T13:29 cart=6 risk=0.89 -> RETRIEVE 18 by 13:39 [HIGH]
+21:56:50 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 14 by 15:20 [HIGH]
+21:56:59 | INFO    | client | --------------------------------------------------------------------------
+21:56:59 | INFO    | client | Calls 2524 in 176s | orders 35 | carts 387 | alerts 23 | below RED 31
+21:56:59 | INFO    | client | threshold=0.1 (source=model_tuned)  consecutive_to_fire=2
+21:56:59 | INFO    | client | replays 1 | models ['mdl_215_0_20261013144311_402375']
+21:56:59 | INFO    | client | Results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/full_run_215_0.csv
+22:19:37 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+22:19:57 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+22:20:03 | INFO    | client | 215:0 | 2026-09-29T15:11 cart=21 risk=0.60 -> RETRIEVE 14 by 15:21 [URGENT]
+22:20:27 | INFO    | client | 215:0 | 2026-10-01T11:57 cart=15 risk=0.60 -> RETRIEVE 14 by 12:07 [URGENT]
+22:20:43 | INFO    | client | 215:0 | 2026-10-02T17:04 cart=6 risk=0.95 -> RETRIEVE 20 by 17:14 [URGENT]
+22:20:54 | INFO    | client | 215:0 | 2026-10-03T12:54 cart=14 risk=0.72 -> RETRIEVE 15 by 13:04 [URGENT]
+22:20:55 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+22:21:07 | INFO    | client | 215:0 | 2026-10-04T12:28 cart=9 risk=0.89 -> RETRIEVE 19 by 12:38 [URGENT]
+22:21:07 | INFO    | client | 215:0 | 2026-10-04T13:01 cart=12 risk=0.99 -> RETRIEVE 20 by 13:11 [URGENT]
+22:21:08 | INFO    | client | 215:0 | 2026-10-04T13:34 cart=7 risk=1.00 -> RETRIEVE 20 by 13:44 [URGENT]
+22:21:08 | INFO    | client | 215:0 | 2026-10-04T14:04 cart=9 risk=0.98 -> RETRIEVE 1 by 14:14 [URGENT]
+22:21:20 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.87 -> RETRIEVE 18 by 13:03 [URGENT]
+22:21:36 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [URGENT]
+22:21:48 | INFO    | client | 215:0 | 2026-10-07T18:26 cart=13 risk=0.62 -> RETRIEVE 15 by 18:36 [URGENT]
+22:21:59 | INFO    | client | 215:0 | 2026-10-08T13:53 cart=9 risk=0.73 -> RETRIEVE 16 by 14:03 [URGENT]
+22:22:01 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+22:22:10 | INFO    | client | 215:0 | 2026-10-09T11:46 cart=7 risk=0.59 -> RETRIEVE 14 by 11:56 [URGENT]
+22:22:26 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+22:22:27 | INFO    | client | 215:0 | 2026-10-10T17:33 cart=18 risk=0.71 -> RETRIEVE 15 by 17:43 [URGENT]
+22:22:37 | INFO    | client | 215:0 | 2026-10-11T12:06 cart=16 risk=0.78 -> RETRIEVE 16 by 12:16 [URGENT]
+22:22:37 | INFO    | client | 215:0 | 2026-10-11T13:23 cart=10 risk=0.94 -> RETRIEVE 20 by 13:33 [URGENT]
+22:22:39 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 20 by 15:20 [URGENT]
+22:22:39 | INFO    | client | 215:0 | 2026-10-11T16:00 cart=12 risk=0.96 -> RETRIEVE 4 by 16:10 [URGENT]
+22:22:46 | INFO    | client | --------------------------------------------------------------------------
+22:22:46 | INFO    | client | Calls 2524 in 169s | orders 21 | carts 330 | alerts 15 | below RED 52
+22:22:46 | INFO    | client | threshold=0.55 (source=entity_config)
+22:22:46 | INFO    | client | replays 2 | models ['mdl_215_0_20261013113343_8b835e']
+22:22:46 | INFO    | client | Results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/full_run_215_0.csv
+23:27:02 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+23:27:09 | INFO    | client | 215:0 | 2026-09-29T15:11 cart=21 risk=0.60 -> RETRIEVE 14 by 15:21 [URGENT]
+23:27:34 | INFO    | client | 215:0 | 2026-10-01T11:57 cart=15 risk=0.60 -> RETRIEVE 14 by 12:07 [URGENT]
+23:27:51 | INFO    | client | 215:0 | 2026-10-02T17:04 cart=6 risk=0.95 -> RETRIEVE 20 by 17:14 [URGENT]
+23:28:02 | INFO    | client | 215:0 | 2026-10-03T12:54 cart=14 risk=0.72 -> RETRIEVE 15 by 13:04 [URGENT]
+23:28:03 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+23:28:16 | INFO    | client | 215:0 | 2026-10-04T12:28 cart=9 risk=0.89 -> RETRIEVE 19 by 12:38 [URGENT]
+23:28:16 | INFO    | client | 215:0 | 2026-10-04T13:01 cart=12 risk=0.99 -> RETRIEVE 20 by 13:11 [URGENT]
+23:28:16 | INFO    | client | 215:0 | 2026-10-04T13:34 cart=7 risk=1.00 -> RETRIEVE 20 by 13:44 [URGENT]
+23:28:17 | INFO    | client | 215:0 | 2026-10-04T14:04 cart=9 risk=0.98 -> RETRIEVE 1 by 14:14 [URGENT]
+23:28:30 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.87 -> RETRIEVE 18 by 13:03 [URGENT]
+23:28:46 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [URGENT]
+23:28:59 | INFO    | client | 215:0 | 2026-10-07T18:26 cart=13 risk=0.62 -> RETRIEVE 15 by 18:36 [URGENT]
+23:29:09 | INFO    | client | 215:0 | 2026-10-08T13:53 cart=9 risk=0.73 -> RETRIEVE 16 by 14:03 [URGENT]
+23:29:12 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+23:29:22 | INFO    | client | 215:0 | 2026-10-09T11:46 cart=7 risk=0.59 -> RETRIEVE 14 by 11:56 [URGENT]
+23:29:38 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+23:29:39 | INFO    | client | 215:0 | 2026-10-10T17:33 cart=18 risk=0.71 -> RETRIEVE 15 by 17:43 [URGENT]
+23:29:50 | INFO    | client | 215:0 | 2026-10-11T12:06 cart=16 risk=0.78 -> RETRIEVE 16 by 12:16 [URGENT]
+23:29:51 | INFO    | client | 215:0 | 2026-10-11T13:23 cart=10 risk=0.94 -> RETRIEVE 20 by 13:33 [URGENT]
+23:29:52 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 20 by 15:20 [URGENT]
+23:29:53 | INFO    | client | 215:0 | 2026-10-11T16:00 cart=12 risk=0.96 -> RETRIEVE 4 by 16:10 [URGENT]
+23:30:01 | INFO    | client | --------------------------------------------------------------------------
+23:30:01 | INFO    | client | Calls 2524 in 178s | orders 21 | carts 330 | alerts 15 | below RED 52
+23:30:01 | INFO    | client | threshold=0.55 (source=entity_config)
+23:30:01 | INFO    | client | replays 1 | models ['mdl_215_0_20261013162520_c7cf3a']
+23:30:01 | INFO    | client | Results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/full_run_215_0.csv
+23:35:59 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+23:36:03 | INFO    | client | 215:0 | 2026-09-29T11:14 cart=25 risk=0.15 -> RETRIEVE 9 by 11:24 [MEDIUM]
+23:36:06 | INFO    | client | 215:0 | 2026-09-29T16:41 cart=11 risk=0.67 -> RETRIEVE 15 by 16:51 [URGENT]
+23:36:18 | INFO    | client | 215:0 | 2026-09-30T12:51 cart=19 risk=0.23 -> RETRIEVE 10 by 13:01 [MEDIUM]
+23:36:21 | INFO    | client | 215:0 | 2026-09-30T18:11 cart=13 risk=0.39 -> RETRIEVE 13 by 18:21 [URGENT]
+23:36:32 | INFO    | client | 215:0 | 2026-10-01T13:51 cart=22 risk=0.21 -> RETRIEVE 10 by 14:01 [MEDIUM]
+23:36:48 | INFO    | client | 215:0 | 2026-10-02T16:47 cart=12 risk=0.16 -> RETRIEVE 9 by 16:57 [URGENT]
+23:37:00 | INFO    | client | 215:0 | 2026-10-03T12:21 cart=26 risk=0.15 -> RETRIEVE 9 by 12:31 [MEDIUM]
+23:37:01 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+23:37:03 | INFO    | client | 215:0 | 2026-10-03T17:48 cart=9 risk=0.18 -> RETRIEVE 10 by 17:58 [MEDIUM]
+23:37:13 | INFO    | client | 215:0 | 2026-10-04T12:14 cart=15 risk=0.15 -> RETRIEVE 9 by 12:24 [MEDIUM]
+23:37:14 | INFO    | client | 215:0 | 2026-10-04T12:48 cart=6 risk=0.99 -> RETRIEVE 20 by 12:58 [URGENT]
+23:37:14 | INFO    | client | 215:0 | 2026-10-04T13:21 cart=5 risk=0.99 -> RETRIEVE 20 by 13:31 [URGENT]
+23:37:14 | INFO    | client | 215:0 | 2026-10-04T13:51 cart=3 risk=0.99 -> RETRIEVE 11 by 14:01 [URGENT]
+23:37:27 | INFO    | client | 215:0 | 2026-10-05T11:17 cart=24 risk=0.16 -> RETRIEVE 9 by 11:27 [MEDIUM]
+23:37:28 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.16 -> RETRIEVE 9 by 13:03 [MEDIUM]
+23:37:42 | INFO    | client | 215:0 | 2026-10-06T14:43 cart=15 risk=0.16 -> RETRIEVE 9 by 14:53 [MEDIUM]
+23:37:44 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [HIGH]
+23:37:54 | INFO    | client | 215:0 | 2026-10-07T13:03 cart=17 risk=0.23 -> RETRIEVE 10 by 13:13 [MEDIUM]
+23:37:58 | INFO    | client | 215:0 | 2026-10-07T18:20 cart=12 risk=0.51 -> RETRIEVE 14 by 18:30 [URGENT]
+23:38:08 | INFO    | client | 215:0 | 2026-10-08T12:19 cart=11 risk=0.18 -> RETRIEVE 10 by 12:29 [MEDIUM]
+23:38:12 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+23:38:21 | INFO    | client | 215:0 | 2026-10-09T11:22 cart=22 risk=0.16 -> RETRIEVE 9 by 11:32 [MEDIUM]
+23:38:21 | INFO    | client | 215:0 | 2026-10-09T11:59 cart=7 risk=0.85 -> RETRIEVE 17 by 12:09 [URGENT]
+23:39:46 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+23:39:50 | INFO    | client | 215:0 | 2026-09-29T11:14 cart=25 risk=0.15 -> RETRIEVE 9 by 11:24 [MEDIUM]
+23:39:53 | INFO    | client | 215:0 | 2026-09-29T16:41 cart=11 risk=0.67 -> RETRIEVE 15 by 16:51 [URGENT]
+23:40:06 | INFO    | client | 215:0 | 2026-09-30T12:51 cart=19 risk=0.23 -> RETRIEVE 10 by 13:01 [MEDIUM]
+23:40:10 | INFO    | client | 215:0 | 2026-09-30T18:11 cart=13 risk=0.39 -> RETRIEVE 13 by 18:21 [URGENT]
+23:51:45 | INFO    | client | Full run | 215:0 | 2543 records | window 20
+23:51:50 | INFO    | client | 215:0 | 2026-09-29T11:14 cart=25 risk=0.15 -> RETRIEVE 9 by 11:24 [MEDIUM]
+23:51:53 | INFO    | client | 215:0 | 2026-09-29T16:41 cart=11 risk=0.67 -> RETRIEVE 15 by 16:51 [URGENT]
+23:52:06 | INFO    | client | 215:0 | 2026-09-30T12:51 cart=19 risk=0.23 -> RETRIEVE 10 by 13:01 [MEDIUM]
+23:52:09 | INFO    | client | 215:0 | 2026-09-30T18:11 cart=13 risk=0.39 -> RETRIEVE 13 by 18:21 [URGENT]
+23:52:21 | INFO    | client | 215:0 | 2026-10-01T13:51 cart=22 risk=0.21 -> RETRIEVE 10 by 14:01 [MEDIUM]
+23:52:38 | INFO    | client | 215:0 | 2026-10-02T16:47 cart=12 risk=0.16 -> RETRIEVE 9 by 16:57 [URGENT]
+23:52:50 | INFO    | client | 215:0 | 2026-10-03T12:21 cart=26 risk=0.15 -> RETRIEVE 9 by 12:31 [MEDIUM]
+23:52:51 | INFO    | client | 215:0 | 2026-10-03T13:57 cart=7 risk=0.81 -> RETRIEVE 17 by 14:07 [URGENT]
+23:52:53 | INFO    | client | 215:0 | 2026-10-03T17:48 cart=9 risk=0.18 -> RETRIEVE 10 by 17:58 [MEDIUM]
+23:53:04 | INFO    | client | 215:0 | 2026-10-04T12:14 cart=15 risk=0.15 -> RETRIEVE 9 by 12:24 [MEDIUM]
+23:53:04 | INFO    | client | 215:0 | 2026-10-04T12:48 cart=6 risk=0.99 -> RETRIEVE 20 by 12:58 [URGENT]
+23:53:04 | INFO    | client | 215:0 | 2026-10-04T13:21 cart=5 risk=0.99 -> RETRIEVE 20 by 13:31 [URGENT]
+23:53:05 | INFO    | client | 215:0 | 2026-10-04T13:51 cart=3 risk=0.99 -> RETRIEVE 11 by 14:01 [URGENT]
+23:53:17 | INFO    | client | 215:0 | 2026-10-05T11:17 cart=24 risk=0.16 -> RETRIEVE 9 by 11:27 [MEDIUM]
+23:53:18 | INFO    | client | 215:0 | 2026-10-05T12:53 cart=12 risk=0.16 -> RETRIEVE 9 by 13:03 [MEDIUM]
+23:53:31 | INFO    | client | 215:0 | 2026-10-06T14:43 cart=15 risk=0.16 -> RETRIEVE 9 by 14:53 [MEDIUM]
+23:53:34 | INFO    | client | 215:0 | 2026-10-06T18:30 cart=7 risk=0.60 -> RETRIEVE 15 by 18:40 [HIGH]
+23:53:45 | INFO    | client | 215:0 | 2026-10-07T13:03 cart=17 risk=0.23 -> RETRIEVE 10 by 13:13 [MEDIUM]
+23:53:48 | INFO    | client | 215:0 | 2026-10-07T18:20 cart=12 risk=0.51 -> RETRIEVE 14 by 18:30 [URGENT]
+23:53:58 | INFO    | client | 215:0 | 2026-10-08T12:19 cart=11 risk=0.18 -> RETRIEVE 10 by 12:29 [MEDIUM]
+23:54:02 | INFO    | client | 215:0 | 2026-10-08T17:43 cart=6 risk=0.95 -> RETRIEVE 20 by 17:53 [URGENT]
+23:54:11 | INFO    | client | 215:0 | 2026-10-09T11:22 cart=22 risk=0.16 -> RETRIEVE 9 by 11:32 [MEDIUM]
+23:54:12 | INFO    | client | 215:0 | 2026-10-09T11:59 cart=7 risk=0.85 -> RETRIEVE 17 by 12:09 [URGENT]
+23:54:26 | INFO    | client | 215:0 | 2026-10-10T11:53 cart=18 risk=0.16 -> RETRIEVE 9 by 12:03 [MEDIUM]
+23:54:29 | INFO    | client | 215:0 | 2026-10-10T16:13 cart=10 risk=0.83 -> RETRIEVE 17 by 16:23 [URGENT]
+23:54:40 | INFO    | client | 215:0 | 2026-10-11T10:53 cart=22 risk=0.15 -> RETRIEVE 9 by 11:03 [MEDIUM]
+23:54:42 | INFO    | client | 215:0 | 2026-10-11T12:56 cart=13 risk=0.90 -> RETRIEVE 19 by 13:06 [URGENT]
+23:54:42 | INFO    | client | 215:0 | 2026-10-11T13:29 cart=6 risk=0.89 -> RETRIEVE 18 by 13:39 [HIGH]
+23:54:43 | INFO    | client | 215:0 | 2026-10-11T15:10 cart=11 risk=0.99 -> RETRIEVE 14 by 15:20 [HIGH]
+23:54:51 | INFO    | client | --------------------------------------------------------------------------
+23:54:51 | INFO    | client | Calls 2524 in 187s | orders 29 | carts 370 | alerts 31 | below RED 35
+23:54:51 | INFO    | client | threshold=0.15 (source=entity_config)
+23:54:51 | INFO    | client | replays 1 | models ['mdl_215_0_20261013165052_053efa']
+23:54:51 | INFO    | client | Results: /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/client/client_logs/full_run_215_0.csv

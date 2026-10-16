@@ -1,0 +1,198 @@
+{
+  "report_id": "bt_clos_e8bfd5ca",
+  "backtest_type": "closed_loop_robustness",
+  "status": "completed",
+  "config_hash": "a273e59720ad4d63",
+  "frozen_model_config": {
+    "red_model": 15.0,
+    "amber_model": 20.0,
+    "feature_windows": [
+      3,
+      6,
+      9
+    ],
+    "primary_horizon": 3,
+    "planning_horizon": 6,
+    "calibration_red": 15.0
+  },
+  "effective_operational_config": {
+    "red_threshold": 15,
+    "amber_threshold": 20,
+    "target_stock": 28,
+    "bay_capacity": 60,
+    "lead_time_min": 10.0,
+    "cooldown_min": 30.0,
+    "min_carts_per_trip": 3,
+    "max_carts_per_trip": 20,
+    "quantity_rule": "point",
+    "reserve_per_day": 60,
+    "consumption_model": "unmet_demand",
+    "usage": "MEDIUM",
+    "retention_halflife_min": 45.0,
+    "max_sequence_gap_min": 15.0
+  },
+  "reason": null,
+  "job_id": "train_20261015122203_3c4b91",
+  "entity_id": "163:215:0",
+  "model_id": "mdl_163_215_0_20261015122212_4622df",
+  "calibration_id": "cal_163_215_0_09e5f3d5",
+  "upload_id": "upl_20261015_aeac90e0",
+  "metrics": {
+    "n_scenarios": 4,
+    "scenarios": [
+      {
+        "scenario": "closed_loop_audited_default",
+        "description": "Closed loop, audited base-case assumptions",
+        "mode": "closed_loop",
+        "consumption_model": "unmet_demand",
+        "usage": "MEDIUM",
+        "reserve": "LIMITED",
+        "lead_time_min": 10.0,
+        "risk_threshold": 0.1852589641434263,
+        "target_stock": 28.0,
+        "baseline_events": 17,
+        "policy_events": 16,
+        "event_reduction_pct": 5.882353,
+        "duration_reduction_pct": 30.430061,
+        "severity_reduction_pct": 33.587786,
+        "n_replenishment_actions": 5,
+        "total_carts_recommended": 56,
+        "trips_per_day": 1.890723,
+        "policy_cost_J": 1528.8,
+        "ledger_conserved": true
+      },
+      {
+        "scenario": "audited_default",
+        "description": "Audited base-case assumptions",
+        "mode": "replay",
+        "consumption_model": "unmet_demand",
+        "usage": "MEDIUM",
+        "reserve": "LIMITED",
+        "lead_time_min": 10.0,
+        "risk_threshold": 0.1852589641434263,
+        "target_stock": 28.0,
+        "baseline_events": 17,
+        "policy_events": 1,
+        "event_reduction_pct": 94.117647,
+        "duration_reduction_pct": 94.200695,
+        "severity_reduction_pct": 96.183206,
+        "n_replenishment_actions": 9,
+        "total_carts_recommended": 137,
+        "trips_per_day": 3.403302,
+        "policy_cost_J": 1064.8,
+        "ledger_conserved": true
+      },
+      {
+        "scenario": "best_case",
+        "description": "Short lead time, persistent surplus, low cart usage",
+        "mode": "replay",
+        "consumption_model": "persistent",
+        "usage": "LOW",
+        "reserve": "LIMITED",
+        "lead_time_min": 5.0,
+        "risk_threshold": 0.1852589641434263,
+        "target_stock": 28.0,
+        "baseline_events": 17,
+        "policy_events": 1,
+        "event_reduction_pct": 94.117647,
+        "duration_reduction_pct": 94.200695,
+        "severity_reduction_pct": 96.183206,
+        "n_replenishment_actions": 3,
+        "total_carts_recommended": 37,
+        "trips_per_day": 1.134434,
+        "policy_cost_J": 991.15,
+        "ledger_conserved": true
+      },
+      {
+        "scenario": "conservative",
+        "description": "Long lead time, full turnover, high cart usage",
+        "mode": "replay",
+        "consumption_model": "turnover",
+        "usage": "HIGH",
+        "reserve": "LIMITED",
+        "lead_time_min": 20.0,
+        "risk_threshold": 0.1852589641434263,
+        "target_stock": 28.0,
+        "baseline_events": 17,
+        "policy_events": 17,
+        "event_reduction_pct": 0.0,
+        "duration_reduction_pct": 0.0,
+        "severity_reduction_pct": 2.210077,
+        "n_replenishment_actions": 13,
+        "total_carts_recommended": 158,
+        "trips_per_day": 4.91588,
+        "policy_cost_J": 1931.745564,
+        "ledger_conserved": true
+      }
+    ],
+    "severity_reduction_min_pct": 2.210077,
+    "severity_reduction_max_pct": 96.183206,
+    "severity_reduction_spread_pct": 93.973129,
+    "failures": []
+  },
+  "assumptions": {
+    "scenarios": {
+      "audited_default": {
+        "consumption_model": "unmet_demand",
+        "usage": "MEDIUM",
+        "lead_time_min": null,
+        "description": "Audited base-case assumptions"
+      },
+      "best_case": {
+        "consumption_model": "persistent",
+        "usage": "LOW",
+        "lead_time_min": 5.0,
+        "description": "Short lead time, persistent surplus, low cart usage"
+      },
+      "conservative": {
+        "consumption_model": "turnover",
+        "usage": "HIGH",
+        "lead_time_min": 20.0,
+        "description": "Long lead time, full turnover, high cart usage"
+      }
+    },
+    "scenario_overrides_applied": {
+      "audited_default": {
+        "consumption_model": "unmet_demand",
+        "usage": "MEDIUM"
+      },
+      "best_case": {
+        "consumption_model": "persistent",
+        "usage": "LOW",
+        "lead_time_min": 5.0
+      },
+      "conservative": {
+        "consumption_model": "turnover",
+        "usage": "HIGH",
+        "lead_time_min": 20.0
+      }
+    },
+    "base_policy": {
+      "red_threshold": 15.0,
+      "amber_threshold": 20.0,
+      "target_stock": 28.0,
+      "risk_threshold": 0.185259,
+      "lead_time_min": 10.0,
+      "cooldown_min": 30.0,
+      "min_carts_per_trip": 3,
+      "max_carts_per_trip": 20,
+      "quantity_rule": "point",
+      "planning_horizon": 6
+    },
+    "frozen_model_thresholds": {
+      "red_model": 15.0,
+      "amber_model": 20.0
+    },
+    "note": "conservative outcomes are reported even when they show zero benefit"
+  },
+  "caveat": "Scenario envelope. The conservative scenario is as valid as the optimistic one; no single percentage is the definitive outcome.",
+  "artifacts": [
+    {
+      "kind": "scenarios_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261015122203_3c4b91/163_215_0/backtests/closed_loop_robustness/scenarios.csv"
+    }
+  ],
+  "window_start": "2026-10-09 14:33:01",
+  "window_end": "2026-10-12 05:04:12",
+  "created_at": "2026-10-15T12:22:39.227+00:00"
+}

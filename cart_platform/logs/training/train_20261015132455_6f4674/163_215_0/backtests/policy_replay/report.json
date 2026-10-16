@@ -1,0 +1,157 @@
+{
+  "report_id": "bt_poli_bbe815fd",
+  "backtest_type": "policy_replay",
+  "status": "completed",
+  "config_hash": "a273e59720ad4d63",
+  "frozen_model_config": {
+    "red_model": 15.0,
+    "amber_model": 20.0,
+    "feature_windows": [
+      3,
+      6,
+      9
+    ],
+    "primary_horizon": 3,
+    "planning_horizon": 6,
+    "calibration_red": 15.0
+  },
+  "effective_operational_config": {
+    "red_threshold": 15,
+    "amber_threshold": 20,
+    "target_stock": 28,
+    "bay_capacity": 60,
+    "lead_time_min": 10.0,
+    "cooldown_min": 30.0,
+    "min_carts_per_trip": 3,
+    "max_carts_per_trip": 20,
+    "quantity_rule": "point",
+    "reserve_per_day": 60,
+    "consumption_model": "unmet_demand",
+    "usage": "MEDIUM",
+    "retention_halflife_min": 45.0,
+    "max_sequence_gap_min": 15.0
+  },
+  "reason": null,
+  "job_id": "train_20261015132455_6f4674",
+  "entity_id": "163:215:0",
+  "model_id": "mdl_163_215_0_20261015132503_b443a8",
+  "calibration_id": "cal_163_215_0_0dac06f6",
+  "upload_id": "upl_20261015_aeac90e0",
+  "metrics": {
+    "mode": "fixed_action_replay",
+    "usage_scenario": "MEDIUM",
+    "reserve_scenario": "LIMITED",
+    "consumption_model": "unmet_demand",
+    "risk_threshold": 0.189243,
+    "target_stock": 28.0,
+    "lead_time_min": 10.0,
+    "effective_lead_time_min": 10.0,
+    "max_carts_per_trip": 20,
+    "n_records": 509,
+    "span_days": 2.644491,
+    "baseline_events": 17,
+    "policy_events": 1,
+    "baseline_records_below_red": 35,
+    "policy_records_below_red": 2,
+    "baseline_shortage_minutes": 230.2,
+    "policy_shortage_minutes": 13.35,
+    "baseline_severity_cart_records": 131.0,
+    "policy_severity_cart_records": 5.0,
+    "baseline_excess_cart_records": 5396.0,
+    "policy_excess_cart_records": 9355.5,
+    "baseline_min_cart": 5.0,
+    "policy_min_cart": 12.0,
+    "baseline_mean_cart": 35.255403,
+    "policy_mean_cart": 46.091356,
+    "n_replenishment_actions": 9,
+    "n_orders_delivered": 9,
+    "n_orders_cancelled": 0,
+    "total_carts_recommended": 137,
+    "total_carts_delivered": 137.0,
+    "avg_carts_per_action": 15.222222,
+    "trips_per_day": 3.403302,
+    "carts_per_day": 51.805816,
+    "n_urgent": 2,
+    "n_capacity_constrained": 0,
+    "n_reserve_constrained": 0,
+    "n_skipped_cooldown": 35,
+    "n_skipped_pending": 0,
+    "event_reduction_pct": 94.117647,
+    "duration_reduction_pct": 94.200695,
+    "severity_reduction_pct": 96.183206,
+    "events_prevented": 16,
+    "policy_cost_J": 1064.8,
+    "baseline_cost_J": 1849.6,
+    "ledger_carts_delivered": 137.0,
+    "ledger_carts_consumed_by_customers": 98.5,
+    "ledger_carts_absorbed_by_capacity": 35.5,
+    "ledger_residual_surplus_at_end": 3.0,
+    "ledger_reserve_drawn": 137.0,
+    "ledger_balance_error": 0.0,
+    "ledger_conserved": true,
+    "attribution": {
+      "historical_events": 17,
+      "prevented_onset": 11,
+      "delayed_onset": 0,
+      "reduced_duration_only": 5,
+      "reduced_severity_only": 0,
+      "unchanged": 1,
+      "warned": 0,
+      "delivered_before_onset": 11,
+      "traceable_prevention": 11,
+      "new_events_under_policy": 0,
+      "residual_shortage_minutes": 13.35
+    }
+  },
+  "assumptions": {
+    "mode": "replay",
+    "policy": {
+      "red_threshold": 15.0,
+      "amber_threshold": 20.0,
+      "target_stock": 28.0,
+      "risk_threshold": 0.189243,
+      "lead_time_min": 10.0,
+      "cooldown_min": 30.0,
+      "min_carts_per_trip": 3,
+      "max_carts_per_trip": 20,
+      "quantity_rule": "point",
+      "planning_horizon": 6
+    },
+    "inventory": {
+      "bay_capacity": 60.0,
+      "usage": "MEDIUM",
+      "reserve": "LIMITED",
+      "consumption_model": "unmet_demand",
+      "retention_halflife_min": 45.0
+    },
+    "cost_lambdas": {
+      "shortage": 10.0,
+      "trip": 5.0,
+      "cart": 0.25,
+      "excess": 0.1
+    },
+    "frozen_model_thresholds": {
+      "red_model": 15.0,
+      "amber_model": 20.0
+    },
+    "note": "operational thresholds drive the policy; the frozen model thresholds shaped the features and calibrator"
+  },
+  "caveat": "Replenishment benefits are simulation estimates conditional on documented assumptions, not observed reductions.",
+  "artifacts": [
+    {
+      "kind": "decisions_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261015132455_6f4674/163_215_0/backtests/policy_replay/decisions.csv"
+    },
+    {
+      "kind": "order_ledger_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261015132455_6f4674/163_215_0/backtests/policy_replay/order_ledger.csv"
+    },
+    {
+      "kind": "event_attribution_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261015132455_6f4674/163_215_0/backtests/policy_replay/event_attribution.csv"
+    }
+  ],
+  "window_start": "2026-10-09 14:33:01",
+  "window_end": "2026-10-12 05:04:12",
+  "created_at": "2026-10-15T13:25:04.052+00:00"
+}

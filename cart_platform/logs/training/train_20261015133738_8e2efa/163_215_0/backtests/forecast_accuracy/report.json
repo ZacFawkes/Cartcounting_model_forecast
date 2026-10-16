@@ -1,0 +1,136 @@
+{
+  "report_id": "bt_fore_dd000dea",
+  "backtest_type": "forecast_accuracy",
+  "status": "completed",
+  "config_hash": "a273e59720ad4d63",
+  "frozen_model_config": {
+    "red_model": 15.0,
+    "amber_model": 20.0,
+    "feature_windows": [
+      3,
+      6,
+      9
+    ],
+    "primary_horizon": 3,
+    "planning_horizon": 6,
+    "calibration_red": 15.0
+  },
+  "effective_operational_config": {
+    "red_threshold": 15,
+    "amber_threshold": 20,
+    "target_stock": 28,
+    "bay_capacity": 60,
+    "lead_time_min": 10.0,
+    "cooldown_min": 30.0,
+    "min_carts_per_trip": 3,
+    "max_carts_per_trip": 20,
+    "quantity_rule": "point",
+    "reserve_per_day": 60,
+    "consumption_model": "unmet_demand",
+    "usage": "MEDIUM",
+    "retention_halflife_min": 45.0,
+    "max_sequence_gap_min": 15.0
+  },
+  "reason": null,
+  "job_id": "train_20261015133738_8e2efa",
+  "entity_id": "163:215:0",
+  "model_id": "mdl_163_215_0_20261015133746_dd421a",
+  "calibration_id": null,
+  "upload_id": "upl_20261015_aeac90e0",
+  "metrics": {
+    "n_scored": 503,
+    "per_horizon": {
+      "cart_at_20min": {
+        "n": 503,
+        "MAE": 3.589744,
+        "RMSE": 5.204321,
+        "Bias": -0.452919,
+        "MedAE": 2.298108,
+        "MAE_near_shortage": 5.051437,
+        "Bias_near_shortage": 0.298522,
+        "n_near_shortage": 200,
+        "baseline_persistence_MAE": 4.326044,
+        "baseline_persistence_RMSE": 6.157638,
+        "improvement_vs_persistence_pct": 17.020167
+      },
+      "cart_at_40min": {
+        "n": 503,
+        "MAE": 4.277338,
+        "RMSE": 5.883631,
+        "Bias": -0.538682,
+        "MedAE": 2.824029,
+        "MAE_near_shortage": 5.981534,
+        "Bias_near_shortage": 0.496004,
+        "n_near_shortage": 207,
+        "baseline_persistence_MAE": 5.045726,
+        "baseline_persistence_RMSE": 7.314573,
+        "improvement_vs_persistence_pct": 15.22848
+      },
+      "min_within_20min": {
+        "n": 503,
+        "MAE": 2.780648,
+        "RMSE": 3.849127,
+        "Bias": -0.0437,
+        "MedAE": 1.909151,
+        "MAE_near_shortage": 3.825319,
+        "Bias_near_shortage": 0.792323,
+        "n_near_shortage": 209,
+        "baseline_persistence_MAE": 3.689861,
+        "baseline_persistence_RMSE": 5.024789,
+        "improvement_vs_persistence_pct": 24.640853
+      },
+      "min_within_40min": {
+        "n": 503,
+        "MAE": 3.100315,
+        "RMSE": 4.116268,
+        "Bias": -0.095304,
+        "MedAE": 2.528133,
+        "MAE_near_shortage": 3.773761,
+        "Bias_near_shortage": 0.791053,
+        "n_near_shortage": 235,
+        "baseline_persistence_MAE": 4.803181,
+        "baseline_persistence_RMSE": 6.470302,
+        "improvement_vs_persistence_pct": 35.452885
+      }
+    },
+    "shortage_classification": {
+      "n": 503,
+      "n_positive": 104,
+      "base_rate": 0.206759,
+      "PR_AUC": 0.800335,
+      "ROC_AUC": 0.937126,
+      "Brier": 0.083027,
+      "at_operating_threshold": {
+        "threshold": 0.189243,
+        "TP": 87,
+        "FP": 62,
+        "FN": 17,
+        "TN": 337,
+        "precision": 0.583893,
+        "recall": 0.836538,
+        "f1": 0.687747,
+        "alert_rate": 0.296223
+      },
+      "lower_bound_coverage": 0.954274,
+      "target_lower_coverage": 0.9
+    }
+  },
+  "assumptions": {
+    "evaluation": "strictly chronological purged holdout",
+    "red_model_frozen": 15.0,
+    "amber_model_frozen": 20.0,
+    "red_used_for_metrics": 15.0,
+    "red_operational_at_report_time": 15.0,
+    "note": "metrics use the frozen model RED; the operational RED is recorded for comparison only"
+  },
+  "caveat": "Measured predictive performance on held-out observations. This is NOT a replenishment benefit claim.",
+  "artifacts": [
+    {
+      "kind": "predictions_csv",
+      "uri": "/Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform/logs/training/train_20261015133738_8e2efa/163_215_0/backtests/forecast_accuracy/predictions.csv"
+    }
+  ],
+  "window_start": "2026-10-09 14:33:01",
+  "window_end": "2026-10-12 05:04:12",
+  "created_at": "2026-10-15T13:37:46.711+00:00"
+}
