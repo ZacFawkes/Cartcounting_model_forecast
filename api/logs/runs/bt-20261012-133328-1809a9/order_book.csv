@@ -1,3 +1,0 @@
-order_id,decision_time,quantity,expected_completion_time,status,delivered_quantity,delivered_time,delivery_record_time,delivery_delay_min,capacity_rejected,cancelled_reason,origin_index,urgency,risk_at_decision,predicted_min_at_decision
-ORD-0001,2026-10-10 11:39:59,14,2026-10-10 11:44:59,COMPLETED,14.0,2026-10-10 11:44:59,2026-10-10 11:53:19,8.333333333333334,0.0,,92,HIGH,0.5984095427435387,14.386421205205366
-ORD-0002,2026-10-11 13:43:18,14,2026-10-11 13:48:18,COMPLETED,14.0,2026-10-11 13:48:18,2026-10-11 13:56:39,8.35,0.0,,302,HIGH,0.6322067594433399,14.086235980830331

@@ -1,3 +1,0 @@
-event_id,onset_time,onset_decision_time,end_time,start_index,end_index,n_records,min_cart,mean_cart,severity_cart_records,duration_min
-1,2026-10-11 13:23:17,2026-10-11 13:29:57,2026-10-11 13:29:57,300,300,1,13.5,13.5,1.5,6.666666666666667
-2,2026-10-11 15:16:43,2026-10-11 15:23:23,2026-10-11 15:23:23,317,317,1,10.0,10.0,5.0,6.666666666666667

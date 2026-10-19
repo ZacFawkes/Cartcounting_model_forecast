@@ -63,12 +63,11 @@ cart_platform/
 ## Quick start — two servers
 
 ```bash
-cd cart_platform
+cd /Users/Zac/PycharmProjects/Cartcounting_model_forecast/cart_platform
+server/run_server.sh   
 pip install -r requirements.txt
 cp .env.example .env              # optional; defaults work for local dev
-
-# Terminal A — ML server (owns data/platform.db)
-bash server/run_server.sh         # http://127.0.0.1:8100/docs
+      # http://127.0.0.1:8100/docs
 
 # Terminal B — standalone result receiver (owns data/results_receiver.db)
 bash receiver/run_server.sh       # http://127.0.0.1:8200/docs
@@ -127,11 +126,11 @@ with the same config is idempotent (`duplicate_of` is set, nothing is retrained)
 ```bash
 curl -X POST http://127.0.0.1:8100/v1/training/jobs \
   -H 'Content-Type: application/json' \
-  -d '{"upload_id": "upl_20261015_26bace64", "entity_ids": ["163:215:0"], "strategy": "per_entity"}'
+  -d '{"upload_id": "upl_20261019_f669dbc9", "entity_ids": ["163:215:0"], "strategy": "per_entity"}'
 
 
 
-curl http://127.0.0.1:8100/v1/training/jobs/train_20261015141046_2dda54
+curl http://127.0.0.1:8100/v1/training/jobs/train_20261019025655_2485e2
 
 ```
 

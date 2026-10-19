@@ -41,6 +41,7 @@ from registry.database import init_db, query_one  # noqa: E402
 from registry.resolver import resolve  # noqa: E402
 from server import logs, store  # noqa: E402
 from server.ondemand import router as ondemand_router  # noqa: E402
+from server.precheck import router as precheck_router
 from server import service as svc  # noqa: E402
 from server.schemas import (  # noqa: E402
     BacktestRequest,
@@ -69,6 +70,7 @@ app = FastAPI(
     ),
 )
 app.include_router(ondemand_router)
+app.include_router(precheck_router)
 _STARTED = time.time()
 
 

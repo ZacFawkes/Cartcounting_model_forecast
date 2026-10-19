@@ -1,9 +1,0 @@
-quantity,carts,check
-Carts delivered into the bay,134.0,
-Carts consumed by customers,97.0,
-Carts absorbed by bay capacity,34.0,
-Surplus remaining at window end,3.0,
-Balance error (must be 0),0.0,PASS
-Carts drawn from reserve,134.0,
-0 <= SimulatedCart <= 60 enforced,60.0,PASS
-Simulated inventory never below observed baseline,0.0,PASS

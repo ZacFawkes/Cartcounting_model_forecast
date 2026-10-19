@@ -1,0 +1,37 @@
+
+# Data
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Model files
+*.pkl
+*.pickle
+*.joblib
+*.npy
+*.npz
+
+# Generated files
+logs/
+outputs/
+models/
+__pycache__/
+*.pyc
+
+# Environment
+.venv/
+venv/
+.env
+
+# IDE
+.idea/
+.DS_Store
