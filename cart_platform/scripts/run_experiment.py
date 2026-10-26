@@ -2,24 +2,16 @@
 One parameterised experiment:
 Upload -> Train -> Validate Config -> Promote -> Score -> CSV.
 
-Each experiment:
-    1. Uploads telemetry with CLI operational configuration.
-    2. Rejects duplicate uploads to avoid silently reusing old configs.
-    3. Trains a candidate model.
-    4. Validates effective configuration against requested parameters.
-    5. Promotes only when validation succeeds.
-    6. Optionally clears previous scoring decisions.
-    7. Scores all observations.
-    8. Exports scoring_results + six API response fields.
-    9. Writes an experiment configuration JSON sidecar.
+Includes strict configuration debugging for:
+- max_carts_per_trip
+- reserve_per_day
+- quantity_rule
+- bay_capacity
+- thresholds
 
 IMPORTANT:
-    This script modifies the platform SQLite database directly.
-    Use only in a local development/test environment.
-
-    Training responses must expose effective_config for validation.
-    If the server only stores this in model metadata, adapt the
-    metadata retrieval in validate_model_config().
+This script modifies the platform SQLite database directly.
+Use only in a local development/test environment.
 """
 
 from __future__ import annotations
@@ -49,6 +41,7 @@ HISTORY_WINDOW = 20
 
 EXTRA_RESPONSE_FIELDS = (
     "urgency",
+    "reason",
     "new_predictive_alert",
     "reactive_critical",
     "expected_completion_time",
@@ -62,33 +55,70 @@ BOOLEAN_RESPONSE_FIELDS = (
     "actionable_before_breach",
 )
 
+DEBUG_FIELDS = (
+    "red_threshold",
+    "amber_threshold",
+    "target_stock",
+    "bay_capacity",
+    "quantity_rule",
+    "min_carts_per_trip",
+    "max_carts_per_trip",
+    "reserve_per_day",
+    "lead_time_min",
+    "cooldown_min",
+    "max_sequence_gap_min",
+)
+
 
 # ============================================================
 # UTILITIES
 # ============================================================
 
-def _log(message: str) -> None:
+def log(message: str) -> None:
     print(
         f"[{datetime.now():%H:%M:%S}] {message}",
         flush=True,
     )
 
 
-def _parts(entity_id: str) -> tuple[str, str, str]:
+def pretty(obj) -> None:
+    print(
+        json.dumps(
+            obj,
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        ),
+        flush=True,
+    )
 
-    parts = entity_id.split(":")
 
-    if len(parts) != 3:
+def parts(entity_id: str) -> tuple[str, str, str]:
+    values = entity_id.split(":")
+
+    if len(values) != 3:
         raise SystemExit(
             'Entity must use "siteKey:KDVR:ChanNo"'
         )
 
-    return tuple(parts)
+    return tuple(values)
 
 
-def _entity_config(a) -> dict:
+def unwrap(value):
+    """
+    Support both:
+        100
+    and:
+        {"value": 100, "source": "entity_config"}
+    """
+    if isinstance(value, dict) and "value" in value:
+        return value["value"]
 
-    cfg = {
+    return value
+
+
+def entity_config(a) -> dict:
+    values = {
         "bay_capacity": a.bay_capacity,
         "red_threshold": a.red_threshold,
         "amber_threshold": a.amber_threshold,
@@ -100,161 +130,214 @@ def _entity_config(a) -> dict:
     }
 
     return {
-        k: v
-        for k, v in cfg.items()
-        if v is not None
+        key: value
+        for key, value in values.items()
+        if value is not None
     }
 
 
-def _entity_defaults(a) -> dict:
-
-    cfg = {
+def entity_defaults(a) -> dict:
+    values = {
         "max_sequence_gap_min": a.max_sequence_gap_min,
         "cooldown_min": a.cooldown_min,
         "lead_time_min": a.lead_time_min,
     }
 
     return {
-        k: v
-        for k, v in cfg.items()
-        if v is not None
+        key: value
+        for key, value in values.items()
+        if value is not None
     }
 
 
-def _request_params(a) -> dict:
-
-    cfg = {
+def request_params(a) -> dict:
+    values = {
         "risk_threshold": a.override_risk_threshold,
         "critical_risk_threshold":
             a.override_critical_risk_threshold,
     }
 
     return {
-        k: v
-        for k, v in cfg.items()
-        if v is not None
+        key: value
+        for key, value in values.items()
+        if value is not None
     }
 
 
-def _experiment_name(a) -> str:
-
+def experiment_name(a) -> str:
     timestamp = datetime.now(
         timezone.utc
     ).strftime("%Y%m%d_%H%M%S_%f")
-
-    unique_id = uuid4().hex[:8]
 
     return (
         f"{a.out.stem}"
         f"_red{a.red_threshold}"
         f"_amber{a.amber_threshold}"
         f"_target{a.target_stock}"
-        f"_{timestamp}_{unique_id}"
+        f"_{timestamp}_{uuid4().hex[:8]}"
     )
 
 
-def _extract_response_fields(result: dict) -> dict:
+# ============================================================
+# DEBUG REPORT
+# ============================================================
 
-    action = result.get("action") or {}
+class ConfigDebugger:
 
-    return {
-        "urgency": action.get("urgency"),
+    def __init__(
+        self,
+        output_path: Path,
+        entity_id: str,
+        expected: dict,
+    ):
+        self.output_path = output_path
+        self.expected = expected
 
-        "new_predictive_alert": result.get(
-            "new_predictive_alert"
-        ),
-
-        "reactive_critical": result.get(
-            "reactive_critical"
-        ),
-
-        "expected_completion_time": action.get(
-            "expected_completion_time"
-        ),
-
-        "actionable_before_breach": action.get(
-            "actionable_before_breach"
-        ),
-
-        "minutes_to_predicted_breach": action.get(
-            "minutes_to_predicted_breach"
-        ),
-    }
-
-
-def _response_summary(frame: pd.DataFrame) -> dict:
-
-    summary = {}
-
-    for field in EXTRA_RESPONSE_FIELDS:
-
-        if field not in frame.columns:
-
-            summary[field] = {
-                "matched": 0,
-                "missing": len(frame),
-            }
-
-            continue
-
-        series = frame[field]
-
-        field_summary = {
-            "matched": int(series.notna().sum()),
-            "missing": int(series.isna().sum()),
+        self.report = {
+            "generated_at": datetime.now(
+                timezone.utc
+            ).isoformat(),
+            "entity_id": entity_id,
+            "expected_config": expected,
+            "stages": {},
         }
 
-        if field == "urgency":
+    def save(self) -> None:
+        self.output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-            field_summary["distribution"] = (
-                series
-                .fillna("MISSING")
-                .value_counts()
-                .to_dict()
-            )
+        self.output_path.write_text(
+            json.dumps(
+                self.report,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            ),
+            encoding="utf-8",
+        )
 
-        elif field in BOOLEAN_RESPONSE_FIELDS:
+    def inspect(
+        self,
+        stage: str,
+        config: dict | None,
+        strict: bool = False,
+    ) -> dict:
 
-            field_summary["true"] = int(
-                series.eq(True).sum()
-            )
+        print("\n" + "=" * 75)
+        print(f"CONFIG DEBUG: {stage}")
+        print("=" * 75)
 
-            field_summary["false"] = int(
-                series.eq(False).sum()
-            )
+        if not isinstance(config, dict):
+            result = {
+                "status": "UNAVAILABLE",
+                "config": config,
+                "mismatches": {},
+                "missing": list(self.expected),
+            }
 
-        elif field == "minutes_to_predicted_breach":
+            self.report["stages"][stage] = result
+            self.save()
 
-            numeric = pd.to_numeric(
-                series,
-                errors="coerce",
-            )
+            print("Config unavailable")
 
-            field_summary["min"] = (
-                float(numeric.min())
-                if numeric.notna().any()
+            if strict:
+                raise RuntimeError(
+                    f"{stage}: configuration unavailable"
+                )
+
+            return result
+
+        mismatches = {}
+        missing = []
+        values = {}
+
+        for key in DEBUG_FIELDS:
+            raw = config.get(key)
+
+            actual = unwrap(raw)
+
+            source = (
+                raw.get("source")
+                if isinstance(raw, dict)
                 else None
             )
 
-            field_summary["median"] = (
-                float(numeric.median())
-                if numeric.notna().any()
-                else None
+            values[key] = {
+                "value": actual,
+                "source": source,
+                "present": key in config,
+            }
+
+            expected = self.expected.get(key)
+
+            print(
+                f"{key:<28} "
+                f"expected={str(expected):<12} "
+                f"actual={str(actual):<12} "
+                f"source={source}"
             )
 
-            field_summary["max"] = (
-                float(numeric.max())
-                if numeric.notna().any()
-                else None
+            if key not in self.expected:
+                continue
+
+            if key not in config:
+                missing.append(key)
+                continue
+
+            if actual != expected:
+                mismatches[key] = {
+                    "expected": expected,
+                    "actual": actual,
+                    "source": source,
+                }
+
+        if mismatches:
+            status = "MISMATCH"
+        elif missing:
+            status = "INCOMPLETE"
+        else:
+            status = "MATCH"
+
+        result = {
+            "status": status,
+            "values": values,
+            "mismatches": mismatches,
+            "missing": missing,
+            "raw_config": config,
+        }
+
+        self.report["stages"][stage] = result
+        self.save()
+
+        print("\nSTATUS:", status)
+
+        if mismatches:
+            pretty(mismatches)
+
+        if missing:
+            print("Missing fields:", missing)
+
+        if strict and status != "MATCH":
+            raise RuntimeError(
+                f"{stage}: CONFIG VALIDATION FAILED. "
+                f"See {self.output_path}"
             )
 
-        summary[field] = field_summary
+        return result
 
-    return summary
+    def attach(
+        self,
+        name: str,
+        value,
+    ) -> None:
+        self.report[name] = value
+        self.save()
 
 
 # ============================================================
-# STEP 1 — UPLOAD
+# UPLOAD
 # ============================================================
 
 def upload(
@@ -262,37 +345,36 @@ def upload(
     data: Path,
     entity: str,
     a,
+    debugger: ConfigDebugger,
 ) -> tuple[str, dict]:
 
     cfg = {
         "name": a.name,
         "timezone": a.timezone,
-
-        "entity_defaults": _entity_defaults(a),
-
+        "entity_defaults": entity_defaults(a),
         "entity_overrides": {
-            entity: _entity_config(a)
+            entity: entity_config(a)
         },
-
         "auto_start_training": False,
     }
 
-    _log("=" * 65)
-    _log("UPLOAD CONFIGURATION")
-    _log("=" * 65)
+    log("UPLOAD CONFIGURATION")
+    pretty(cfg)
 
-    print(
-        json.dumps(
-            cfg,
-            indent=2,
-        )
+    debugger.inspect(
+        "upload_request_entity_overrides",
+        cfg["entity_overrides"][entity],
+        strict=False,
+    )
+
+    debugger.attach(
+        "upload_request",
+        cfg,
     )
 
     with open(data, "rb") as fh:
-
         response = requests.post(
             f"{base}/v1/datasets/upload",
-
             files={
                 "file": (
                     data.name,
@@ -300,11 +382,9 @@ def upload(
                     "text/csv",
                 )
             },
-
             data={
                 "config": json.dumps(cfg)
             },
-
             timeout=600,
         )
 
@@ -312,27 +392,21 @@ def upload(
 
     body = response.json()
 
-    _log("UPLOAD API RESPONSE")
+    log("UPLOAD RESPONSE")
+    pretty(body)
 
-    print(
-        json.dumps(
-            body,
-            indent=2,
-        )
+    debugger.attach(
+        "upload_response",
+        body,
     )
 
     upload_id = body["upload_id"]
 
-    duplicate_of = body.get("duplicate_of")
-
-    if duplicate_of:
-
+    if body.get("duplicate_of"):
         raise RuntimeError(
             "DUPLICATE UPLOAD DETECTED!\n"
             f"upload_id={upload_id}\n"
-            f"duplicate_of={duplicate_of}\n"
-            "Training stopped to avoid reusing "
-            "potentially stale configuration."
+            f"duplicate_of={body['duplicate_of']}"
         )
 
     entities = {
@@ -341,20 +415,15 @@ def upload(
     }
 
     if entity not in entities:
-
         raise RuntimeError(
-            f"Entity {entity} not found in upload."
+            f"Entity {entity} not found in upload"
         )
-
-    _log(
-        f"Upload registered successfully: {upload_id}"
-    )
 
     return upload_id, cfg
 
 
 # ============================================================
-# STEP 2 — TRAIN
+# TRAIN
 # ============================================================
 
 def train(
@@ -362,6 +431,7 @@ def train(
     upload_id: str,
     entity: str,
     timeout_s: int,
+    debugger: ConfigDebugger,
 ) -> tuple[dict, str]:
 
     payload = {
@@ -370,14 +440,8 @@ def train(
         "strategy": "per_entity",
     }
 
-    _log("TRAINING REQUEST")
-
-    print(
-        json.dumps(
-            payload,
-            indent=2,
-        )
-    )
+    log("TRAINING REQUEST")
+    pretty(payload)
 
     response = requests.post(
         f"{base}/v1/training/jobs",
@@ -387,16 +451,13 @@ def train(
 
     response.raise_for_status()
 
-    body = response.json()
+    job_id = response.json()["job_id"]
 
-    job_id = body["job_id"]
-
-    _log(f"Training job: {job_id}")
+    log(f"Training job: {job_id}")
 
     deadline = time.time() + timeout_s
 
     while time.time() < deadline:
-
         time.sleep(5)
 
         response = requests.get(
@@ -418,7 +479,6 @@ def train(
             break
 
     else:
-
         raise TimeoutError(
             f"Training timed out: {job_id}"
         )
@@ -427,24 +487,16 @@ def train(
         "succeeded",
         "completed",
     ):
-
         raise RuntimeError(
             f"Training failed: {status}\n"
             f"{json.dumps(body, indent=2)[:2000]}"
         )
 
-    results = body.get("results") or {}
+    result = (
+        body.get("results") or {}
+    ).get(entity)
 
-    result = results.get(entity)
-
-    if not result:
-
-        raise RuntimeError(
-            f"No training result for {entity}"
-        )
-
-    if not result.get("model_id"):
-
+    if not result or not result.get("model_id"):
         raise RuntimeError(
             "Training produced no model:\n"
             + json.dumps(
@@ -454,7 +506,12 @@ def train(
             )
         )
 
-    _log(
+    debugger.attach(
+        "training_result",
+        result,
+    )
+
+    log(
         f"Candidate model: {result['model_id']}"
     )
 
@@ -462,75 +519,7 @@ def train(
 
 
 # ============================================================
-# STEP 3 — VALIDATE CONFIGURATION
-# ============================================================
-
-def validate_model_config(
-    result: dict,
-    a,
-) -> dict:
-
-    effective = result.get("effective_config")
-
-    if not isinstance(effective, dict):
-
-        raise RuntimeError(
-            "Training response has no effective_config.\n"
-            "Cannot verify configuration before promotion.\n"
-            "Inspect the candidate model metadata."
-        )
-
-    expected = {
-        **_entity_defaults(a),
-        **_entity_config(a),
-    }
-
-    mismatches = {}
-
-    for key, expected_value in expected.items():
-
-        actual_value = effective.get(key)
-
-        if actual_value != expected_value:
-
-            mismatches[key] = {
-                "expected": expected_value,
-                "actual": actual_value,
-            }
-
-    _log("CONFIGURATION VALIDATION")
-
-    print(
-        json.dumps(
-            {
-                "expected": expected,
-                "effective": effective,
-                "mismatches": mismatches,
-            },
-            indent=2,
-            default=str,
-        )
-    )
-
-    if mismatches:
-
-        raise RuntimeError(
-            "MODEL CONFIGURATION MISMATCH!\n"
-            + json.dumps(
-                mismatches,
-                indent=2,
-            )
-        )
-
-    _log(
-        "Configuration validated successfully."
-    )
-
-    return effective
-
-
-# ============================================================
-# STEP 4 — PROMOTE
+# PROMOTE
 # ============================================================
 
 def promote(
@@ -539,7 +528,7 @@ def promote(
     model_id: str,
 ) -> None:
 
-    site, kdvr, chan = _parts(entity)
+    site, kdvr, chan = parts(entity)
 
     url = (
         f"{base}/v1/sites/{site}/entities/"
@@ -548,28 +537,25 @@ def promote(
 
     response = requests.post(
         url,
-
         json={
             "promoted_by": "run_experiment"
         },
-
         timeout=120,
     )
 
     if response.status_code >= 400:
-
         raise RuntimeError(
             "Model promotion blocked:\n"
             + response.text[:1000]
         )
 
-    _log(
+    log(
         f"Model promoted: {model_id}"
     )
 
 
 # ============================================================
-# STEP 5 — CLEAR PREVIOUS DECISIONS
+# CLEAR PREVIOUS
 # ============================================================
 
 def clear_previous(
@@ -580,11 +566,9 @@ def clear_previous(
 
     response = requests.post(
         f"{base}/v1/sessions/reset",
-
         json={
             "entity_id": entity
         },
-
         timeout=60,
     )
 
@@ -593,21 +577,17 @@ def clear_previous(
     con = sqlite3.connect(db)
 
     try:
-
         with con:
-
             for sql in (
                 "DELETE FROM scoring_results WHERE entity_id=?",
                 "DELETE FROM scoring_artifacts WHERE entity_id=?",
                 "DELETE FROM replenishment_orders WHERE entity_id=?",
                 "DELETE FROM session_state WHERE entity_id=?",
             ):
-
                 con.execute(
                     sql,
                     (entity,),
                 )
-
     finally:
         con.close()
 
@@ -618,13 +598,11 @@ def clear_previous(
     )
 
     if artifact_dir.exists():
-
         for path in sorted(
             artifact_dir.rglob("*"),
             key=lambda p: len(p.parts),
             reverse=True,
         ):
-
             path.chmod(0o700)
 
             if path.is_file():
@@ -634,13 +612,39 @@ def clear_previous(
 
         artifact_dir.rmdir()
 
-    _log(
+    log(
         "Previous scoring decisions cleared."
     )
 
 
 # ============================================================
-# STEP 6 — SCORE
+# API RESPONSE EXTRACTION
+# ============================================================
+
+def extract_response_fields(
+    result: dict,
+) -> dict:
+
+    action = result.get("action") or {}
+
+    return {
+        "urgency": action.get("urgency"),
+        "reason": action.get("reason"),
+        "new_predictive_alert":
+            result.get("new_predictive_alert"),
+        "reactive_critical":
+            result.get("reactive_critical"),
+        "expected_completion_time":
+            action.get("expected_completion_time"),
+        "actionable_before_breach":
+            action.get("actionable_before_breach"),
+        "minutes_to_predicted_breach":
+            action.get("minutes_to_predicted_breach"),
+    }
+
+
+# ============================================================
+# SCORE
 # ============================================================
 
 def score_all(
@@ -649,6 +653,8 @@ def score_all(
     data: Path,
     window: int,
     params: dict,
+    debugger: ConfigDebugger,
+    expected_model_id: str | None = None,
 ) -> dict:
 
     df = load_telemetry(data)
@@ -658,12 +664,11 @@ def score_all(
     ].reset_index(drop=True)
 
     if len(df) < window:
-
         raise RuntimeError(
             f"Need {window} records, got {len(df)}"
         )
 
-    site, kdvr, chan = _parts(entity)
+    site, kdvr, chan = parts(entity)
 
     url = (
         f"{base}/v1/sites/{site}/entities/"
@@ -674,20 +679,15 @@ def score_all(
 
     response_map = {}
 
-    missing_request_ids = 0
-
-    missing_fields = {
-        field: 0
-        for field in EXTRA_RESPONSE_FIELDS
-    }
-
     n = 0
 
     start = time.perf_counter()
 
     try:
-
-        for i in range(window - 1, len(df)):
+        for i in range(
+            window - 1,
+            len(df),
+        ):
 
             records = to_records(
                 df.iloc[
@@ -714,69 +714,88 @@ def score_all(
 
             result = response.json()
 
+            if n == 0:
+                log(
+                    "FIRST SCORING RESPONSE"
+                )
+
+                pretty(
+                    {
+                        "model_id":
+                            result.get("model_id"),
+                        "config_hash":
+                            result.get("config_hash"),
+                        "resolved_config":
+                            result.get("resolved_config"),
+                        "frozen_model_config":
+                            result.get("frozen_model_config"),
+                        "action":
+                            result.get("action"),
+                    }
+                )
+
+                debugger.attach(
+                    "first_scoring_response",
+                    result,
+                )
+
+                resolved = result.get(
+                    "resolved_config"
+                )
+
+                debugger.inspect(
+                    "scoring_resolved_config",
+                    resolved,
+                    strict=(
+                        expected_model_id is not None
+                    ),
+                )
+
+                if expected_model_id is not None:
+                    actual_model_id = result.get(
+                        "model_id"
+                    )
+
+                    if actual_model_id != expected_model_id:
+                        raise RuntimeError(
+                            "SCORING MODEL MISMATCH!\n"
+                            f"Expected: {expected_model_id}\n"
+                            f"Actual: {actual_model_id}"
+                        )
+
             request_id = result.get(
                 "request_id"
             )
 
-            extra_fields = (
-                _extract_response_fields(result)
-            )
-
-            if request_id is None:
-
-                missing_request_ids += 1
-
-            else:
-
+            if request_id is not None:
                 response_map[
                     str(request_id)
-                ] = extra_fields
-
-            for field, value in extra_fields.items():
-
-                if value is None:
-                    missing_fields[field] += 1
+                ] = extract_response_fields(
+                    result
+                )
 
             n += 1
 
             if n % 500 == 0:
-
-                _log(
-                    f"Scored {n} decisions; "
-                    f"captured {len(response_map)} responses."
+                log(
+                    f"Scored {n} decisions"
                 )
 
     finally:
-
         session.close()
 
     elapsed = time.perf_counter() - start
 
-    _log(
-        f"Scored {n} decisions in {elapsed:.1f}s"
+    log(
+        f"Scored {n} decisions "
+        f"in {elapsed:.1f}s"
     )
-
-    if missing_request_ids:
-
-        _log(
-            f"WARNING: {missing_request_ids} "
-            "responses have no request_id."
-        )
-
-    for field, count in missing_fields.items():
-
-        if count:
-
-            _log(
-                f"WARNING: {field} returned "
-                f"{count} null values."
-            )
 
     return response_map
 
 
 # ============================================================
-# STEP 7 — EXPORT CSV
+# EXPORT
 # ============================================================
 
 def export(
@@ -789,7 +808,6 @@ def export(
     con = sqlite3.connect(db)
 
     try:
-
         frame = pd.read_sql(
             """
             SELECT *
@@ -797,24 +815,18 @@ def export(
             WHERE entity_id=?
             ORDER BY decision_time
             """,
-
             con,
-
             params=(entity,),
         )
-
     finally:
-
         con.close()
 
     if "request_id" not in frame.columns:
-
         raise RuntimeError(
             "scoring_results has no request_id."
         )
 
     if response_map:
-
         extra = pd.DataFrame.from_dict(
             response_map,
             orient="index",
@@ -823,9 +835,7 @@ def export(
         extra.index.name = "request_id"
 
         extra = extra.reset_index()
-
     else:
-
         extra = pd.DataFrame(
             columns=[
                 "request_id",
@@ -834,12 +844,14 @@ def export(
         )
 
     for field in EXTRA_RESPONSE_FIELDS:
-
         if field not in extra.columns:
             extra[field] = None
 
     extra = extra[
-        ["request_id", *EXTRA_RESPONSE_FIELDS]
+        [
+            "request_id",
+            *EXTRA_RESPONSE_FIELDS,
+        ]
     ]
 
     frame["request_id"] = (
@@ -864,25 +876,15 @@ def export(
         validate="many_to_one",
     )
 
-    matched_ids = int(
-        frame["request_id"].isin(
-            list(response_map.keys())
-        ).sum()
-    )
-
     for field in EXTRA_RESPONSE_FIELDS:
-
         api_column = f"__api_{field}"
 
         if field in frame.columns:
-
             frame[field] = (
                 frame[api_column]
                 .combine_first(frame[field])
             )
-
         else:
-
             frame[field] = frame[api_column]
 
         frame = frame.drop(
@@ -890,35 +892,18 @@ def export(
         )
 
     for field in BOOLEAN_RESPONSE_FIELDS:
-
         frame[field] = (
             frame[field].astype("boolean")
         )
 
-    frame["minutes_to_predicted_breach"] = (
-        pd.to_numeric(
-            frame["minutes_to_predicted_breach"],
-            errors="coerce",
-        )
+    frame[
+        "minutes_to_predicted_breach"
+    ] = pd.to_numeric(
+        frame[
+            "minutes_to_predicted_breach"
+        ],
+        errors="coerce",
     )
-
-    _log(
-        f"Matched API responses: "
-        f"{matched_ids}/{len(frame)}"
-    )
-
-    for field in EXTRA_RESPONSE_FIELDS:
-
-        matched = int(
-            frame[field].notna().sum()
-        )
-
-        missing = len(frame) - matched
-
-        _log(
-            f"{field}: matched={matched}, "
-            f"missing={missing}"
-        )
 
     out.parent.mkdir(
         parents=True,
@@ -930,23 +915,22 @@ def export(
         index=False,
     )
 
-    _log(
-        f"Exported {len(frame)} rows x "
-        f"{len(frame.columns)} columns -> {out}"
+    log(
+        f"Exported {len(frame)} rows "
+        f"-> {out}"
     )
 
     return frame
 
 
 # ============================================================
-# STEP 8 — SUMMARY
+# SUMMARY
 # ============================================================
 
 def summarise(frame: pd.DataFrame) -> None:
 
     if frame.empty:
-
-        _log("No scoring results.")
+        log("No scoring results.")
         return
 
     print("\n" + "=" * 70)
@@ -955,16 +939,6 @@ def summarise(frame: pd.DataFrame) -> None:
 
     print(
         f"Decisions: {len(frame)}"
-    )
-
-    print(
-        f"Window: "
-        f"{frame.decision_time.min()} -> "
-        f"{frame.decision_time.max()}"
-    )
-
-    print(
-        f"Model ID: {frame.model_id.iloc[0]}"
     )
 
     print(
@@ -980,34 +954,6 @@ def summarise(frame: pd.DataFrame) -> None:
         .to_dict(),
     )
 
-    for field in (
-        "new_predictive_alert",
-        "reactive_critical",
-        "actionable_before_breach",
-    ):
-
-        count = int(
-            frame[field].eq(True).sum()
-        )
-
-        print(
-            f"{field}: {count}"
-        )
-
-    breach_minutes = pd.to_numeric(
-        frame["minutes_to_predicted_breach"],
-        errors="coerce",
-    )
-
-    if breach_minutes.notna().any():
-
-        print(
-            "Minutes to breach:",
-            f"median={breach_minutes.median():.1f}",
-            f"min={breach_minutes.min():.1f}",
-            f"max={breach_minutes.max():.1f}",
-        )
-
     orders = frame[
         frame.quantity > 0
     ]
@@ -1017,25 +963,8 @@ def summarise(frame: pd.DataFrame) -> None:
     )
 
     print(
-        f"Carts ordered: {int(orders.quantity.sum())}"
-    )
-
-    surplus = (
-        frame.simulated_cart
-        - frame.current_cart
-    )
-
-    print(
-        "Simulated surplus:",
-        f"median={surplus.median():.1f}",
-        f"mean={surplus.mean():.2f}",
-    )
-
-    print(
-        "Shortage risk:",
-        f"median={frame.shortage_risk.median():.4f}",
-        f"q90={frame.shortage_risk.quantile(0.9):.4f}",
-        f"max={frame.shortage_risk.max():.4f}",
+        f"Carts ordered: "
+        f"{int(orders.quantity.sum())}"
     )
 
     print("=" * 70)
@@ -1048,18 +977,10 @@ def summarise(frame: pd.DataFrame) -> None:
 def main() -> None:
 
     p = argparse.ArgumentParser(
-        description=(
-            "Parameterised upload, train, validate, "
-            "promote, score and export experiment."
-        ),
         formatter_class=(
             argparse.ArgumentDefaultsHelpFormatter
-        ),
+        )
     )
-
-    # --------------------------------------------------------
-    # General
-    # --------------------------------------------------------
 
     p.add_argument(
         "--base-url",
@@ -1080,7 +1001,9 @@ def main() -> None:
     p.add_argument(
         "--out",
         type=Path,
-        default=Path("outputs/experiment.csv"),
+        default=Path(
+            "outputs/experiment.csv"
+        ),
     )
 
     p.add_argument(
@@ -1115,10 +1038,6 @@ def main() -> None:
         action="store_true",
     )
 
-    # --------------------------------------------------------
-    # Operational parameters
-    # --------------------------------------------------------
-
     g = p.add_argument_group(
         "Operational parameters"
     )
@@ -1150,7 +1069,7 @@ def main() -> None:
     g.add_argument(
         "--cooldown-min",
         type=float,
-        default=30.0,
+        default=30,
     )
 
     g.add_argument(
@@ -1167,7 +1086,10 @@ def main() -> None:
 
     g.add_argument(
         "--quantity-rule",
-        choices=["point", "risk"],
+        choices=[
+            "point",
+            "risk",
+        ],
         default=None,
     )
 
@@ -1189,10 +1111,6 @@ def main() -> None:
         default=None,
     )
 
-    # --------------------------------------------------------
-    # Risk overrides
-    # --------------------------------------------------------
-
     r = p.add_argument_group(
         "Risk-band overrides"
     )
@@ -1209,16 +1127,11 @@ def main() -> None:
         default=None,
     )
 
-    # --------------------------------------------------------
-    # Parse
-    # --------------------------------------------------------
-
     a = p.parse_args()
 
-    _parts(a.entity)
+    parts(a.entity)
 
     if not a.data.exists():
-
         raise SystemExit(
             f"Dataset not found: {a.data}"
         )
@@ -1228,23 +1141,50 @@ def main() -> None:
         < a.amber_threshold
         <= a.bay_capacity
     ):
-
         raise SystemExit(
             "Invalid thresholds: require "
             "0 <= RED < AMBER <= bay_capacity."
         )
 
+    if a.max_carts_per_trip is not None:
+        if a.max_carts_per_trip <= 0:
+            raise SystemExit(
+                "--max-carts-per-trip must be > 0"
+            )
+
+    if a.reserve_per_day is not None:
+        if a.reserve_per_day < 0:
+            raise SystemExit(
+                "--reserve-per-day must be >= 0"
+            )
+
     if not a.skip_training:
-
-        a.name = a.name or _experiment_name(a)
-
+        a.name = (
+            a.name
+            or experiment_name(a)
+        )
     else:
+        a.name = (
+            a.name
+            or a.out.stem
+        )
 
-        a.name = a.name or a.out.stem
+    expected_config = {
+        **entity_defaults(a),
+        **entity_config(a),
+    }
 
-    # --------------------------------------------------------
-    # Health
-    # --------------------------------------------------------
+    debug_path = a.out.with_suffix(
+        ".debug.json"
+    )
+
+    debugger = ConfigDebugger(
+        output_path=debug_path,
+        entity_id=a.entity,
+        expected=expected_config,
+    )
+
+    debugger.save()
 
     response = requests.get(
         f"{a.base_url}/health",
@@ -1253,15 +1193,10 @@ def main() -> None:
 
     response.raise_for_status()
 
-    health = response.json()
-
-    _log(
-        f"Server status: {health.get('status')}"
+    log(
+        f"Server status: "
+        f"{response.json().get('status')}"
     )
-
-    # --------------------------------------------------------
-    # Upload / Train / Validate / Promote
-    # --------------------------------------------------------
 
     result = {}
     upload_id = None
@@ -1270,18 +1205,17 @@ def main() -> None:
     upload_config = None
 
     if a.skip_training:
-
-        _log(
+        log(
             "Skipping training; using promoted model."
         )
 
     else:
-
         upload_id, upload_config = upload(
             a.base_url,
             a.data,
             a.entity,
             a,
+            debugger,
         )
 
         result, job_id = train(
@@ -1289,11 +1223,17 @@ def main() -> None:
             upload_id,
             a.entity,
             a.train_timeout,
+            debugger,
         )
 
-        effective_config = validate_model_config(
-            result,
-            a,
+        effective_config = result.get(
+            "effective_config"
+        )
+
+        debugger.inspect(
+            "training_effective_config",
+            effective_config,
+            strict=True,
         )
 
         promote(
@@ -1302,23 +1242,14 @@ def main() -> None:
             result["model_id"],
         )
 
-    # --------------------------------------------------------
-    # Clear
-    # --------------------------------------------------------
-
     if not a.keep_previous:
-
         clear_previous(
             Path(C.DB_PATH),
             a.entity,
             a.base_url,
         )
 
-    # --------------------------------------------------------
-    # Score
-    # --------------------------------------------------------
-
-    params = _request_params(a)
+    params = request_params(a)
 
     response_map = score_all(
         a.base_url,
@@ -1326,11 +1257,13 @@ def main() -> None:
         a.data,
         a.window,
         params,
+        debugger,
+        expected_model_id=(
+            result.get("model_id")
+            if not a.skip_training
+            else None
+        ),
     )
-
-    # --------------------------------------------------------
-    # Export
-    # --------------------------------------------------------
 
     frame = export(
         Path(C.DB_PATH),
@@ -1338,10 +1271,6 @@ def main() -> None:
         a.out,
         response_map,
     )
-
-    # --------------------------------------------------------
-    # Sidecar
-    # --------------------------------------------------------
 
     sidecar = a.out.with_suffix(
         ".config.json"
@@ -1353,27 +1282,16 @@ def main() -> None:
         ).isoformat(timespec="seconds"),
 
         "experiment_name": a.name,
-
         "entity_id": a.entity,
-
         "dataset": str(a.data),
-
         "upload_id": upload_id,
-
         "training_job_id": job_id,
-
         "history_window": a.window,
-
         "upload_config": upload_config,
-
-        "entity_config_sent": _entity_config(a),
-
-        "entity_defaults_sent": _entity_defaults(a),
-
+        "entity_config_sent": entity_config(a),
+        "entity_defaults_sent": entity_defaults(a),
         "effective_config": effective_config,
-
         "request_overrides": params,
-
         "model_id": (
             result.get("model_id")
             or (
@@ -1382,31 +1300,10 @@ def main() -> None:
                 else None
             )
         ),
-
-        "config_hash": result.get(
-            "config_hash"
-        ),
-
-        "alert_bands": result.get(
-            "alert_bands"
-        ),
-
+        "config_hash": result.get("config_hash"),
+        "alert_bands": result.get("alert_bands"),
         "n_decisions": int(len(frame)),
-
-        "urgency_distribution": (
-            frame["urgency"]
-            .fillna("MISSING")
-            .value_counts()
-            .to_dict()
-        ),
-
-        "api_response_fields": _response_summary(
-            frame
-        ),
-
-        "api_response_request_ids": len(
-            response_map
-        ),
+        "debug_report": str(debug_path),
     }
 
     sidecar.parent.mkdir(
@@ -1418,13 +1315,18 @@ def main() -> None:
         json.dumps(
             config_data,
             indent=2,
+            ensure_ascii=False,
             default=str,
         ),
         encoding="utf-8",
     )
 
-    _log(
+    log(
         f"Configuration sidecar: {sidecar}"
+    )
+
+    log(
+        f"Debug report: {debug_path}"
     )
 
     summarise(frame)

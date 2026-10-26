@@ -50,12 +50,22 @@ def recommend_quantity(
 
 def classify_urgency(
     predicted_min: float,
+    current_cart: float,
     lower_bound_min: float,
     minutes_to_predicted_breach: float,
     cfg: RunConfig,
 ) -> str:
     """Urgent when the breach is expected before replenishment can complete."""
-    if lower_bound_min < cfg.red_threshold and minutes_to_predicted_breach <= cfg.lead_time_min:
+    predicted_urgent = (
+            lower_bound_min <= cfg.red_threshold
+            and pd.notna(minutes_to_predicted_breach)
+            and minutes_to_predicted_breach <= cfg.lead_time_min
+
+    )
+    reactive_urgent = (
+            current_cart <= cfg.red_threshold
+    )
+    if predicted_urgent or  reactive_urgent:
         return "URGENT"
     if predicted_min < cfg.red_threshold:
         return "HIGH"
@@ -97,7 +107,13 @@ def decide(
     if q <= 0:
         return None
 
-    urgency = classify_urgency(predicted_min, lower_bound_min, mins_to_breach, cfg)
+    urgency = classify_urgency(
+        current_cart=current_cart,
+        predicted_min=predicted_min,
+        lower_bound_min=lower_bound_min,
+        minutes_to_predicted_breach=mins_to_breach,
+        cfg=cfg,
+    )
     reason = (
         f"risk={risk:.2f} >= {cfg.risk_threshold:.2f}; predicted 40-min minimum "
         f"{predicted_min:.1f} (90% lower bound {lower_bound_min:.1f}) vs target "

@@ -417,7 +417,10 @@ def test_replay_is_deterministic():
 
 
 def test_no_action_leaves_trajectory_identical_to_baseline():
-    rows = _frame([12] * 25)
+    # Stock stays above red_threshold (15), so the reactive floor does not fire
+    # and the low risk is the only thing deciding. This isolates the invariant
+    # under test: an idle policy must not perturb the trajectory.
+    rows = _frame([30] * 25)
     pol = PolicyConfig(risk_threshold=0.99)
     res = run_simulation(rows, _origins(rows), _const_predictor(len(rows), risk=0.1), pol, INV)
     s = res["series"]
@@ -427,6 +430,24 @@ def test_no_action_leaves_trajectory_identical_to_baseline():
     assert m["policy_events"] == m["baseline_events"]
     assert m["policy_shortage_minutes"] == m["baseline_shortage_minutes"]
     assert m["total_carts_recommended"] == 0
+
+
+def test_stock_at_or_below_red_acts_even_when_risk_is_low():
+    """An observed shortage must not be suppressed by the risk gate.
+
+    Carts sit at 12 against a red threshold of 15 while the model reports a
+    benign risk of 0.1 - the usual outcome of a flat forecast, which is exactly
+    what a persistently empty bay produces. Replenishment is still required,
+    and it is URGENT because the shortage is real rather than predicted.
+    """
+    rows = _frame([12] * 25)
+    pol = PolicyConfig(risk_threshold=0.99)
+    res = run_simulation(rows, _origins(rows), _const_predictor(len(rows), risk=0.1), pol, INV)
+
+    decisions = res["decisions"]
+    assert len(decisions) > 0
+    assert (decisions["urgency"] == "URGENT").all()
+    assert res["metrics"]["total_carts_recommended"] > 0
 
 
 def test_decisions_only_taken_at_scoreable_origins():

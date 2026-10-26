@@ -196,6 +196,7 @@ def plan_replenishment(
     inventory: InventoryConfig,
     reserve_left: float,
     effective_lead: float,
+    observed_cart: float | None = None,
 ) -> dict | None:
     """Size and classify a replenishment action for one decision point.
 
@@ -205,12 +206,31 @@ def plan_replenishment(
 
     The requirement is netted against carts already in transit, so the same
     shortfall is never ordered twice.
+
+    ``observed_cart`` is the independently measured bay level used for the
+    reactive floor. Online that is the camera count, which is ground truth;
+    ``current_sim`` there is only a model (baseline plus the carts the system
+    *believes* it added) and drifts whenever a recommendation is not carried
+    out. In a backtest no independent observation of the simulated world
+    exists, so it defaults to ``current_sim``.
     """
     risk = float(pred["risk"])
-    if risk < policy.risk_threshold:
+    reactive_level = float(current_sim if observed_cart is None else observed_cart)
+
+    # Reactive floor: the bay is already at or below the red threshold. That is
+    # an observed fact, not a forecast, so the risk gate must not suppress it -
+    # a flat prediction keeps risk low precisely when stock is lowest.
+    reactive_critical = reactive_level <= policy.red_threshold
+
+    if risk < policy.risk_threshold and not reactive_critical:
         return None
 
     anchor = pred["lower_min_6"] if policy.quantity_rule == "risk" else pred["pred_min_6"]
+    if reactive_critical:
+        # The shortfall is measured from the worse of forecast and reality. A
+        # forecast that recovers above target must not shrink an order for a
+        # bay that is empty right now.
+        anchor = min(float(anchor), reactive_level)
     required = policy.target_stock - anchor
     need = required - pending_qty
     q = int(math.ceil(max(0.0, need)))
@@ -240,20 +260,32 @@ def plan_replenishment(
 
     step = 20.0 / 3.0
     lo_path = _interpolate_path(
-        current_sim, pred["pred_cart_3"], pred["pred_cart_6"],
-        policy.planning_horizon, pred["lower_min_6"] - pred["pred_min_6"],
+        current_sim,
+        pred["pred_cart_3"],
+        pred["pred_cart_6"],
+        policy.planning_horizon,
+        pred["lower_min_6"] - pred["pred_min_6"],
     )
-    mins_to_breach = np.inf
-    for k, v in enumerate(lo_path, start=1):
-        if v < policy.red_threshold:
-            mins_to_breach = k * step
-            break
-
+    # CASE 1: Current cart already reaches RED
+    if reactive_level <= policy.red_threshold:
+        mins_to_breach = 0.0
+    else:
+        mins_to_breach = None
+        # CASE 2: Find first predicted RED breach
+        for k, v in enumerate(lo_path, start=1):
+            if v <= policy.red_threshold:
+                mins_to_breach = k * step
+                break
+        # CASE 3: No breach predicted
+        # Fallback to time of minimum predicted cart count
+        if mins_to_breach is None:
+            min_index = int(np.argmin(lo_path))
+            mins_to_breach = (min_index + 1) * step
     return {
         "quantity": int(q),
         "required": float(required),
         "netted_need": float(need),
-        "urgency": _urgency(pred, mins_to_breach, effective_lead, policy),
+        "urgency": _urgency(pred, mins_to_breach, effective_lead, policy, reactive_level),
         "minutes_to_predicted_breach": float(mins_to_breach),
         "actionable_before_breach": bool(mins_to_breach > effective_lead),
         "capacity_rejected": float(capacity_rejected),
@@ -536,8 +568,13 @@ def _interpolate_path(c0, p3, p6, horizon, offset=0.0):
         path.append(v + offset)
     return path
 
-
-def _urgency(pred, mins_to_breach, lead, policy) -> str:
+def _urgency(pred, mins_to_breach, lead, policy, current_cart=None) -> str:
+    # Reactive: already at or below red. An observed shortage outranks any
+    # forecast, so it is urgent regardless of the predicted path.
+    # A reactive URGENT is still identifiable downstream: it is the case where
+    # current_cart <= red_threshold in the same record.
+    if current_cart is not None and float(current_cart) <= policy.red_threshold:
+        return "URGENT"
     if pred["lower_min_6"] < policy.red_threshold and mins_to_breach <= lead:
         return "URGENT"
     if pred["pred_min_6"] < policy.red_threshold:

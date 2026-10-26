@@ -215,12 +215,30 @@ def test_replenishment_quantity_rules():
 
 def test_urgency_accounts_for_lead_time():
     cfg = C.RunConfig(lead_time_min=10.0)
+    # current_cart stays above red_threshold (15) so these exercise the
+    # predictive path only.
     # Breach expected in 5 minutes, carts arrive in 10 -> urgent
-    assert classify_urgency(12.0, 8.0, minutes_to_predicted_breach=5.0, cfg=cfg) == "URGENT"
+    assert classify_urgency(12.0, 20.0, 8.0, minutes_to_predicted_breach=5.0,
+                            cfg=cfg) == "URGENT"
     # Same forecast but the breach is 30 minutes away -> actionable in time
-    assert classify_urgency(12.0, 8.0, minutes_to_predicted_breach=30.0, cfg=cfg) == "HIGH"
-    assert classify_urgency(18.0, 17.0, np.inf, cfg) == "MEDIUM"
-    assert classify_urgency(30.0, 28.0, np.inf, cfg) == "LOW"
+    assert classify_urgency(12.0, 20.0, 8.0, minutes_to_predicted_breach=30.0,
+                            cfg=cfg) == "HIGH"
+    assert classify_urgency(18.0, 20.0, 17.0, np.inf, cfg) == "MEDIUM"
+    assert classify_urgency(30.0, 28.0, 28.0, np.inf, cfg) == "LOW"
+
+
+def test_urgency_is_reactive_when_stock_is_already_critical():
+    """An observed shortage outranks any forecast.
+
+    The forecast here is benign - the bay is predicted to sit well above every
+    threshold and never breach - but the carts on the floor are already at or
+    below red. That is a fact, not a prediction, so it must be URGENT.
+    """
+    cfg = C.RunConfig(lead_time_min=10.0)
+    assert classify_urgency(30.0, cfg.red_threshold, 28.0, np.inf, cfg) == "URGENT"
+    assert classify_urgency(30.0, cfg.red_threshold - 5, 28.0, np.inf, cfg) == "URGENT"
+    # One cart above red is not reactive, so the forecast decides.
+    assert classify_urgency(30.0, cfg.red_threshold + 1, 28.0, np.inf, cfg) == "LOW"
 
 
 # --------------------------------------------------------------------------

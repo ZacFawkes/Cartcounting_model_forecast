@@ -350,6 +350,7 @@ class Engine:
             plan = plan_replenishment(
                 pred=pred,
                 current_sim=current_sim,
+                observed_cart=baseline,
                 pending_qty=session.book.pending_quantity(),
                 policy=policy,
                 inventory=inventory,
