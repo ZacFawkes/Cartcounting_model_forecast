@@ -270,7 +270,7 @@ def plan_replenishment(
     if reactive_level <= policy.red_threshold:
         mins_to_breach = 0.0
     else:
-        mins_to_breach = None
+        mins_to_breach = np.inf
         # CASE 2: Find first predicted RED breach
         for k, v in enumerate(lo_path, start=1):
             if v <= policy.red_threshold:
@@ -278,9 +278,9 @@ def plan_replenishment(
                 break
         # CASE 3: No breach predicted
         # Fallback to time of minimum predicted cart count
-        if mins_to_breach is None:
-            min_index = int(np.argmin(lo_path))
-            mins_to_breach = (min_index + 1) * step
+        # if mins_to_breach is None:
+        #     min_index = int(np.argmin(lo_path))
+        #     mins_to_breach = (min_index + 1) * step
     return {
         "quantity": int(q),
         "required": float(required),

@@ -1069,7 +1069,7 @@ def main() -> None:
     g.add_argument(
         "--cooldown-min",
         type=float,
-        default=30,
+        default=0,
     )
 
     g.add_argument(
