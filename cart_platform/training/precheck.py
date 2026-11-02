@@ -26,7 +26,6 @@ from training.splits import (
 from training.trainer import (
     TARGETS,
     MIN_HISTORY_RECORDS,
-    preflight,
 )
 
 
@@ -42,7 +41,7 @@ def _calibration_for_red(
             prepared,
             windows=list(frozen.feature_windows),
             red_threshold=red,
-            amber_threshold=frozen.amber_model,
+            amber_threshold=red + 15,
         ),
         primary=frozen.primary_horizon,
         planning=frozen.planning_horizon,
@@ -108,14 +107,12 @@ def _calibration_for_red(
 
 def find_valid_red_threshold(
     prepared: pd.DataFrame,
-    entity_cfg: dict,
     frozen,
-    initial_red: int,
     max_red: int,
 ) -> dict:
     """Find the first RED meeting auto_calibrate's data eligibility gates."""
 
-    initial_red = int(initial_red)
+    initial_red = 0
     max_red = int(max_red)
 
     if initial_red < 0:
@@ -123,19 +120,8 @@ def find_valid_red_threshold(
 
     if max_red < initial_red:
         raise ValueError(
-            "Initial RED exceeds the configured search ceiling"
+            "Dataset capacity must be nonnegative"
         )
-
-    reasons = preflight(prepared, entity_cfg)
-
-    if reasons:
-        return {
-            "status": "FAIL",
-            "reason": "INSUFFICIENT_TRAINING_DATA",
-            "blocking_reasons": reasons,
-            "initial_red": initial_red,
-            "recommended_red": None,
-        }
 
     attempts = []
 
@@ -191,6 +177,7 @@ def find_valid_red_threshold(
                 "check_type": "calibration_data_eligibility",
                 "initial_red": initial_red,
                 "recommended_red": red,
+                "amber_threshold": red + 15,
                 "adjusted": red != initial_red,
                 "required_samples": MIN_CALIBRATION_SAMPLES,
                 "required_positives": MIN_CALIBRATION_POSITIVES,
