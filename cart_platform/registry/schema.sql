@@ -447,3 +447,20 @@ CREATE TABLE IF NOT EXISTS config_snapshots (
 
 CREATE INDEX IF NOT EXISTS ix_snapshots_entity ON config_snapshots(entity_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_snapshots_model ON config_snapshots(model_id);
+
+-- Audit trail of the disk-retention job (registry/retention.py). Files of a
+-- retired model are deletable; the record that they existed is not.
+CREATE TABLE IF NOT EXISTS artifact_purges (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id    TEXT NOT NULL,
+    entity_id   TEXT,
+    job_id      TEXT,
+    upload_id   TEXT,
+    kind        TEXT NOT NULL,   -- model_bundle|training_artifacts|score_artifact|upload
+    path        TEXT NOT NULL,
+    bytes       INTEGER,
+    purged_at   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_purges_model ON artifact_purges(model_id);
+CREATE INDEX IF NOT EXISTS ix_purges_time ON artifact_purges(purged_at DESC);

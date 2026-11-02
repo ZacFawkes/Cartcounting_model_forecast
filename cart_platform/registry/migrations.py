@@ -28,6 +28,10 @@ ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "alert_band_id": "TEXT",
         "alert_band_status": "TEXT",
         "alert_band_json": "TEXT",
+        # Disk retention (registry/retention.py): when the artifacts of this
+        # retired model were deleted, and how many bytes that freed.
+        "purged_at": "TEXT",
+        "purged_bytes": "INTEGER",
     },
     "entity_config": {
         "last_upload_id": "TEXT",

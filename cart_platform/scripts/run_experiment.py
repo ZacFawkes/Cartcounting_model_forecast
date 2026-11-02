@@ -9,6 +9,18 @@ Includes strict configuration debugging for:
 - bay_capacity
 - thresholds
 
+Additional API extraction:
+- pending_carts
+- pending_orders
+- pending_order_count
+- pending_order_ids
+- pending_order_quantities
+- pending_order_completion_times
+- pending_before_order
+- current_cart_api
+- simulated_cart_api
+- forecast_min_40_api
+
 IMPORTANT:
 This script modifies the platform SQLite database directly.
 Use only in a local development/test environment.
@@ -39,7 +51,13 @@ from client.platform_client import load_telemetry, to_records
 DEFAULT_DATA = PLATFORM_ROOT / "data" / "real_data.csv"
 HISTORY_WINDOW = 20
 
+
+# ============================================================
+# API RESPONSE FIELDS
+# ============================================================
+
 EXTRA_RESPONSE_FIELDS = (
+    # Existing
     "urgency",
     "reason",
     "new_predictive_alert",
@@ -47,12 +65,38 @@ EXTRA_RESPONSE_FIELDS = (
     "expected_completion_time",
     "actionable_before_breach",
     "minutes_to_predicted_breach",
+
+    # Pending orders
+    "pending_carts",
+    "pending_orders",
+    "pending_order_count",
+    "pending_order_ids",
+    "pending_order_quantities",
+    "pending_order_completion_times",
+    "pending_before_order",
+
+    # Inventory
+    "current_cart_api",
+    "simulated_cart_api",
+
+    # Forecast
+    "forecast_min_40_api",
 )
 
 BOOLEAN_RESPONSE_FIELDS = (
     "new_predictive_alert",
     "reactive_critical",
     "actionable_before_breach",
+)
+
+NUMERIC_RESPONSE_FIELDS = (
+    "pending_carts",
+    "pending_order_count",
+    "pending_before_order",
+    "current_cart_api",
+    "simulated_cart_api",
+    "forecast_min_40_api",
+    "minutes_to_predicted_breach",
 )
 
 DEBUG_FIELDS = (
@@ -105,16 +149,22 @@ def parts(entity_id: str) -> tuple[str, str, str]:
 
 
 def unwrap(value):
-    """
-    Support both:
-        100
-    and:
-        {"value": 100, "source": "entity_config"}
-    """
     if isinstance(value, dict) and "value" in value:
         return value["value"]
 
     return value
+
+
+def json_string(value) -> str:
+    """
+    Convert nested API objects to a valid JSON string for CSV.
+    """
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        default=str,
+        separators=(",", ":"),
+    )
 
 
 def entity_config(a) -> dict:
@@ -624,22 +674,114 @@ def clear_previous(
 def extract_response_fields(
     result: dict,
 ) -> dict:
+    """
+    Extract additional fields directly from the scoring API.
+
+    pending_carts is the pending quantity AFTER the scoring decision.
+
+    pending_before_order is inferred as:
+        pending_carts - action.quantity
+
+    This matches the current score() implementation, where the new
+    order is placed before the response is assembled.
+    """
 
     action = result.get("action") or {}
+    forecast = result.get("forecast") or {}
+
+    pending_orders = result.get("pending_orders") or []
+
+    if not isinstance(pending_orders, list):
+        pending_orders = []
+
+    pending_carts = result.get("pending_carts")
+
+    quantity = action.get("quantity") or 0
+
+    if pending_carts is not None:
+        pending_before_order = (
+            float(pending_carts) - float(quantity)
+        )
+    else:
+        pending_before_order = None
+
+    pending_order_ids = []
+    pending_order_quantities = []
+    pending_order_completion_times = []
+
+    for order in pending_orders:
+        if not isinstance(order, dict):
+            continue
+
+        pending_order_ids.append(
+            order.get("order_id")
+        )
+
+        pending_order_quantities.append(
+            order.get("quantity")
+        )
+
+        pending_order_completion_times.append(
+            order.get("expected_completion_time")
+        )
 
     return {
+        # Existing fields
         "urgency": action.get("urgency"),
+
         "reason": action.get("reason"),
+
         "new_predictive_alert":
             result.get("new_predictive_alert"),
+
         "reactive_critical":
             result.get("reactive_critical"),
+
         "expected_completion_time":
             action.get("expected_completion_time"),
+
         "actionable_before_breach":
             action.get("actionable_before_breach"),
+
         "minutes_to_predicted_breach":
             action.get("minutes_to_predicted_breach"),
+
+        # Pending
+        "pending_carts": pending_carts,
+
+        "pending_orders": json_string(
+            pending_orders
+        ),
+
+        "pending_order_count": len(
+            pending_orders
+        ),
+
+        "pending_order_ids": json_string(
+            pending_order_ids
+        ),
+
+        "pending_order_quantities": json_string(
+            pending_order_quantities
+        ),
+
+        "pending_order_completion_times": json_string(
+            pending_order_completion_times
+        ),
+
+        "pending_before_order":
+            pending_before_order,
+
+        # Inventory
+        "current_cart_api":
+            result.get("current_cart"),
+
+        "simulated_cart_api":
+            result.get("simulated_cart"),
+
+        # Forecast
+        "forecast_min_40_api":
+            forecast.get("min_within_40min"),
     }
 
 
@@ -723,14 +865,24 @@ def score_all(
                     {
                         "model_id":
                             result.get("model_id"),
+
                         "config_hash":
                             result.get("config_hash"),
+
                         "resolved_config":
                             result.get("resolved_config"),
+
                         "frozen_model_config":
                             result.get("frozen_model_config"),
+
                         "action":
                             result.get("action"),
+
+                        "pending_carts":
+                            result.get("pending_carts"),
+
+                        "pending_orders":
+                            result.get("pending_orders"),
                     }
                 )
 
@@ -896,14 +1048,11 @@ def export(
             frame[field].astype("boolean")
         )
 
-    frame[
-        "minutes_to_predicted_breach"
-    ] = pd.to_numeric(
-        frame[
-            "minutes_to_predicted_breach"
-        ],
-        errors="coerce",
-    )
+    for field in NUMERIC_RESPONSE_FIELDS:
+        frame[field] = pd.to_numeric(
+            frame[field],
+            errors="coerce",
+        )
 
     out.parent.mkdir(
         parents=True,
@@ -965,6 +1114,16 @@ def summarise(frame: pd.DataFrame) -> None:
     print(
         f"Carts ordered: "
         f"{int(orders.quantity.sum())}"
+    )
+
+    print(
+        "Maximum pending carts:",
+        frame["pending_carts"].max(),
+    )
+
+    print(
+        "Maximum pending orders:",
+        frame["pending_order_count"].max(),
     )
 
     print("=" * 70)
@@ -1075,7 +1234,7 @@ def main() -> None:
     g.add_argument(
         "--lead-time-min",
         type=float,
-        default=10.0,
+        default=20.0,
     )
 
     g.add_argument(
@@ -1334,3 +1493,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
+    
+    
+    

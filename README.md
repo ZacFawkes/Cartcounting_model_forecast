@@ -24,7 +24,7 @@ Three modules, each independently runnable and tested.
 Cartcounting_model_forecast/
 ├── cart_forecasting/   the audited modelling pipeline        49 tests
 ├── api/                single-entity scoring API             18 tests
-└── cart_platform/      multi-entity platform + receiver     155 tests
+└── cart_platform/      multi-entity platform + receiver     161 tests
 ```
 
 | Module | What it is | When to use it |
@@ -448,13 +448,13 @@ predictive, and counting them inflates the score.
 ```bash
 cd cart_forecasting && python -m pytest tests -q     #  49
 cd api              && python -m pytest tests -q     #  18
-cd cart_platform    && python -m pytest tests -q     # 155
+cd cart_platform    && python -m pytest tests -q     # 161
 ```
 
 The platform suite covers the registry and three-level resolution, on-demand
 upload/training/backtests, the result receiver contract and idempotency, the
-outbox with retry and dead-lettering, per-entity configuration isolation, and
-the independent WARNING/CRITICAL bands.
+outbox with retry and dead-lettering, per-entity configuration isolation, the
+independent WARNING/CRITICAL bands, and the retired-model disk retention job.
 
 **P0 guarantee:** `block_id` is keyed by entity, so no rolling window, lag or
 target can mix two streams — verified by a dedicated unit test and by a
@@ -479,6 +479,62 @@ sqlite3 cart_platform/data/results_receiver.db \
 projections built from it. Deleting a projection directly cannot be repaired by
 re-sending, because the receiver answers a known `event_id` with `REPLAY` and
 skips the projection — rebuild it from `received_events` instead.
+
+---
+
+## Disk retention for retired models
+
+A `retired` model can never be scored again — the resolver binds only a
+`champion`, and a rollback promotes a `candidate` — so its bundle, training
+logs, calibration and backtest artifacts are dead weight. A fortnightly job
+deletes them.
+
+```bash
+cd cart_platform
+python scripts/purge_retired_artifacts.py                 # dry-run: show the plan
+python scripts/purge_retired_artifacts.py --apply         # free the space
+python scripts/purge_retired_artifacts.py --grace-days 30 # keep artifacts longer
+```
+
+**Files only.** Every database row survives, so the audit trail of what was
+trained, promoted and retired is untouched: the `model_registry` row is stamped
+with `purged_at` / `purged_bytes`, and one row per deleted path is written to
+`artifact_purges`.
+
+What is deleted for each model retired more than `--grace-days` ago:
+
+| Path | Deleted when |
+|---|---|
+| `models/per_entity/<entity>/<model_id>/` | always |
+| `logs/training/<job_id>/<entity>/` | no non-retired model and no unfinished job uses that job |
+| `logs/scores/.../req-*.csv` for that model | always |
+| `data/uploads/<upload_id>/` | every model trained from that upload is retired |
+
+Nothing outside `models/`, `logs/` and `data/uploads/` can be touched: a path
+that resolves elsewhere — or to a root itself — is refused, so a stale absolute
+`artifact_path` copied from another machine cannot delete anything.
+
+### Fortnightly schedule (macOS `launchd`)
+
+```bash
+bash scripts/install_purge_schedule.sh              # install + load, every 14 days
+bash scripts/install_purge_schedule.sh --run-now    # trigger immediately
+bash scripts/install_purge_schedule.sh --uninstall
+GRACE_DAYS=30 bash scripts/install_purge_schedule.sh
+```
+
+Agent `com.cartplatform.purge-retired`, log `logs/retention/purge.log`. The run
+is idempotent — an already-purged model is skipped — so a missed or repeated
+fire is harmless.
+
+```bash
+sqlite3 cart_platform/data/platform.db \
+  "SELECT COUNT(*), SUM(purged_bytes)/1048576 AS mb
+     FROM model_registry WHERE purged_at IS NOT NULL;"
+```
+
+On Linux the same command runs from cron:
+`0 3 */14 * * cd /path/to/cart_platform && ../.venv/bin/python scripts/purge_retired_artifacts.py --apply`
 
 ---
 
