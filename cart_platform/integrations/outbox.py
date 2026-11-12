@@ -12,13 +12,18 @@ import random
 from datetime import datetime, timedelta, timezone
 
 from settings import (
+    EVENT_SCHEMA_VERSION,
     PUBLISH_BASE_BACKOFF_SEC,
     PUBLISH_MAX_ATTEMPTS,
     PUBLISH_MAX_BACKOFF_SEC,
     RESULT_RECEIVER_URL,
 )
 
-from integrations.result_events import ResultEvent, canonical_json  # noqa: E402
+from integrations.result_events import (  # noqa: E402
+    SCORING_RECORDED,
+    ResultEvent,
+    canonical_json,
+)
 from registry.database import execute, query, query_one, utc_now  # noqa: E402
 
 LOGGER = logging.getLogger("platform.outbox")
@@ -68,10 +73,32 @@ def claim_batch(limit: int = 20) -> list[dict]:
 
 
 def mark_sent(row_id: int, response_code: int) -> None:
+    sent_at = utc_now()
     execute(
         "UPDATE result_outbox SET status=?, sent_at=?, response_code=?, last_error=NULL "
         "WHERE id=?",
-        (SENT, utc_now(), response_code, row_id),
+        (SENT, sent_at, response_code, row_id),
+    )
+    _stamp_decision_delivered(row_id, sent_at)
+
+
+def _stamp_decision_delivered(row_id: int, sent_at: str) -> None:
+    """Record on the decision itself that the receiver now holds it.
+
+    Retention deletes a ``scoring_results`` row only once this stamp is set, so
+    a decision can never be dropped locally before the other server has it —
+    the outbox row that proves delivery is itself eventually purged, which is
+    why the proof is copied onto the decision.
+    """
+    execute(
+        "UPDATE scoring_results SET delivered_at=? "
+        " WHERE delivered_at IS NULL AND EXISTS ("
+        "   SELECT 1 FROM result_outbox o WHERE o.id=? "
+        "     AND o.event_type=? AND o.event_id = 'score:' || scoring_results.entity_id"
+        "         || ':' || scoring_results.decision_time"
+        "         || ':' || scoring_results.model_id"
+        "         || ':v' || ?)",
+        (sent_at, row_id, SCORING_RECORDED, EVENT_SCHEMA_VERSION),
     )
 
 

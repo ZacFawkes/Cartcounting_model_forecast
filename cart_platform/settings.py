@@ -51,6 +51,13 @@ API_VERSION = "2.0.0"
 # Set CART_ENTITY_INCLUDE_SITE=0 only for a single-site deployment.
 INCLUDE_SITE_IN_ENTITY_ID = os.getenv("CART_ENTITY_INCLUDE_SITE", "1") == "1"
 
+# D9c — one channel can watch more than one physical cart bay, so the bay is
+# part of the identity: "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8".
+# The dataset must then carry the bay column (data_loader.BAY_COL, "BayID"),
+# which column_mapping can map from any source column name.
+# Set CART_ENTITY_INCLUDE_BAY=0 for a deployment with one bay per channel.
+INCLUDE_BAY_IN_ENTITY_ID = os.getenv("CART_ENTITY_INCLUDE_BAY", "1") == "1"
+
 # Feature window: 10 records is the hard floor (cart_lag_9, cart_momentum_9,
 # cart_diff_volatility_9 all reach back to t-9). 12 is enforced for margin.
 MIN_HISTORY_RECORDS = int(os.getenv("CART_MIN_HISTORY", "12"))

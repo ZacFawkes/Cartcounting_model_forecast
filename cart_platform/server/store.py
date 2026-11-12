@@ -36,18 +36,19 @@ def new_order_id(entity_id: str) -> str:
 def persist_order(order, entity: dict, source: str = "score") -> None:
     execute(
         """INSERT OR REPLACE INTO replenishment_orders
-           (order_id, entity_id, kdvr, chan_no, site_key, decision_time, quantity,
-            expected_completion_time, status, delivered_quantity, delivered_at,
-            urgency, risk_at_decision, predicted_min_at_decision, source,
-            executed_by, executed_at, actual_carts, execution_notes)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+           (order_id, entity_id, kdvr, chan_no, site_key, bay_id, decision_time,
+            quantity, expected_completion_time, status, delivered_quantity,
+            delivered_at, urgency, risk_at_decision, predicted_min_at_decision,
+            source, executed_by, executed_at, actual_carts, execution_notes)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
                    (SELECT executed_by FROM replenishment_orders WHERE order_id=?),
                    (SELECT executed_at FROM replenishment_orders WHERE order_id=?),
                    (SELECT actual_carts FROM replenishment_orders WHERE order_id=?),
                    (SELECT execution_notes FROM replenishment_orders WHERE order_id=?))""",
         (
             order.order_id, entity["entity_id"], entity["kdvr"], entity["chan_no"],
-            entity["site_key"], str(order.decision_time), int(order.quantity),
+            entity["site_key"], entity.get("bay_id"), str(order.decision_time),
+            int(order.quantity),
             str(order.expected_completion_time), order.status,
             float(order.delivered_quantity),
             str(order.delivered_time) if order.delivered_time is not None else None,
@@ -207,6 +208,7 @@ def write_score(result: dict, entity: dict, latency_ms: float = 0.0) -> bool:
         "kdvr": entity["kdvr"],
         "chan_no": entity["chan_no"],
         "site_key": entity["site_key"],
+        "bay_id": entity.get("bay_id"),
         "decision_time": result["decision_time"],
         "current_cart": result["current_cart"],
         "simulated_cart": result["simulated_cart"],

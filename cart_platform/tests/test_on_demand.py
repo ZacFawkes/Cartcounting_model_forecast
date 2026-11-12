@@ -23,14 +23,14 @@ UPLOAD_CONFIG = {
     "entity_defaults": {"max_sequence_gap_min": 15,
                         "cooldown_min": 30, "lead_time_min": 10},
     "entity_overrides": {
-        "163:215:0": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
+        "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
                   "target_stock": 28},
-        "163:215:1": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
+        "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
                   "target_stock": 40},
         # 300:2 deliberately omitted: no bay_capacity => must stay untrainable
     },
 }
-TRAINED, UNTRAINED, NO_CONFIG = "163:215:0", "163:215:1", "177:300:2"
+TRAINED, UNTRAINED, NO_CONFIG = "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8", "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0", "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"
 
 
 @pytest.fixture(scope="module")
@@ -98,7 +98,8 @@ def test_upload_discovers_exactly_the_pairs_in_this_file(upload):
     assert upload["n_entities"] == 3
     for e in upload["entities"]:
         assert e["score_url"] == (
-            f"/v1/sites/{e['site_key']}/entities/{e['kdvr']}/{e['chan_no']}/score")
+            f"/v1/sites/{e['site_key']}/entities/{e['kdvr']}/{e['chan_no']}"
+            f"/bays/{e['bay_id']}/score")
         assert e["model_status"] == "not_ready"
     assert "THIS upload only" in upload["note"]
 
@@ -162,7 +163,7 @@ def test_upload_quality_report_counts_dropped_rows(client, tmp_path, telemetry):
 # Spec §9.3 — the route exists but is not ready until promotion
 # ==========================================================================
 def test_score_route_returns_409_until_a_model_is_promoted(client, telemetry, upload):
-    r = client.post(f"/v1/sites/163/entities/215/0/score",
+    r = client.post(f"/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, 215, 0)})
     assert r.status_code == 409
     detail = r.json()["detail"]
@@ -171,7 +172,7 @@ def test_score_route_returns_409_until_a_model_is_promoted(client, telemetry, up
 
 
 def test_unregistered_pair_returns_404(client, telemetry):
-    r = client.post("/v1/sites/163/entities/777/5/score",
+    r = client.post("/v1/sites/163/entities/777/5/bays/UNKNOWN_BAY/score",
                     json={"records": _window(telemetry, 215, 0)})
     assert r.status_code == 404
 
@@ -187,9 +188,10 @@ def test_training_job_trains_only_the_selected_entity(client, trained_job):
 
 
 def test_other_entities_are_untouched_by_that_job(client, trained_job):
-    for site, kdvr, chan in ((163, 215, 1), (177, 300, 2)):
+    for entity_id in (UNTRAINED, NO_CONFIG):
+        site, kdvr, chan, bay = entity_id.split(":")
         readiness = client.get(
-            f"/v1/sites/{site}/entities/{kdvr}/{chan}/model").json()
+            f"/v1/sites/{site}/entities/{kdvr}/{chan}/bays/{bay}/model").json()
         assert readiness["model_status"] == "not_ready"
         assert readiness["active"] is None
         assert readiness["candidates"] == []
@@ -197,9 +199,9 @@ def test_other_entities_are_untouched_by_that_job(client, trained_job):
 
 def test_training_rejects_entities_outside_the_upload(client, upload):
     r = client.post("/v1/training/jobs",
-                    json={"upload_id": upload["upload_id"], "entity_ids": ["163:999:9"]})
+                    json={"upload_id": upload["upload_id"], "entity_ids": ["163:999:9:bay_x"]})
     assert r.status_code == 422
-    assert "163:999:9" in r.json()["detail"]["unknown_for_upload"]
+    assert "163:999:9:bay_x" in r.json()["detail"]["unknown_for_upload"]
 
 
 def test_pooled_strategy_is_not_silently_applied(client, upload):
@@ -212,7 +214,7 @@ def test_pooled_strategy_is_not_silently_applied(client, upload):
 def test_candidate_is_not_auto_promoted(client, trained_job):
     result = trained_job["results"][TRAINED]
     assert result["promoted"] is False
-    readiness = client.get("/v1/sites/163/entities/215/0/model").json()
+    readiness = client.get("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/model").json()
     assert readiness["model_status"] == "candidate_not_promoted"
     assert readiness["active"] is None
 
@@ -368,7 +370,7 @@ def test_artifact_layout_matches_the_spec(trained_job):
 @pytest.fixture(scope="module")
 def promoted(client, trained_job) -> str:
     model_id = trained_job["results"][TRAINED]["model_id"]
-    r = client.post(f"/v1/sites/163/entities/215/0/models/{model_id}/promote",
+    r = client.post(f"/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/models/{model_id}/promote",
                     json={"promoted_by": "pytest"})
     assert r.status_code == 200, r.text
     assert r.json()["model_status"] == "ready"
@@ -376,12 +378,12 @@ def promoted(client, trained_job) -> str:
 
 
 def test_promotion_activates_only_that_entity(client, promoted):
-    assert client.get("/v1/sites/163/entities/215/0/model").json()["model_status"] == "ready"
-    assert client.get("/v1/sites/163/entities/215/1/model").json()["model_status"] == "not_ready"
+    assert client.get("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/model").json()["model_status"] == "ready"
+    assert client.get("/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/model").json()["model_status"] == "not_ready"
 
 
 def test_a_model_cannot_be_promoted_for_a_different_entity(client, promoted):
-    r = client.post(f"/v1/sites/163/entities/215/1/models/{promoted}/promote",
+    r = client.post(f"/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/models/{promoted}/promote",
                     json={"promoted_by": "pytest"})
     assert r.status_code == 404
 
@@ -416,7 +418,7 @@ def test_promotion_gate_rejects_an_unready_candidate(client, isolated_db):
         (UNTRAINED, "mdl_broken", None, "candidate", 0,
          '["backtest \'policy_replay\' status is \'failed\'"]', utc_now()),
     )
-    r = client.post("/v1/sites/163/entities/215/1/models/mdl_broken/promote",
+    r = client.post("/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/models/mdl_broken/promote",
                     json={"promoted_by": "pytest"})
     assert r.status_code == 409
     assert r.json()["detail"]["blocking_reasons"]
@@ -427,7 +429,7 @@ def test_promotion_gate_rejects_an_unready_candidate(client, isolated_db):
 # Spec §9.4 / §9.6 / §9.7 / §9.8 — scoring
 # ==========================================================================
 def test_score_uses_the_entity_specific_model(client, telemetry, promoted):
-    r = client.post("/v1/sites/163/entities/215/0/score",
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, 215, 0)})
     assert r.status_code == 200, r.text
     b = r.json()
@@ -440,28 +442,28 @@ def test_score_uses_the_entity_specific_model(client, telemetry, promoted):
 
 
 def test_other_entity_cannot_borrow_that_model(client, telemetry, promoted):
-    r = client.post("/v1/sites/163/entities/215/1/score",
+    r = client.post("/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/score",
                     json={"records": _window(telemetry, 215, 1)})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "MODEL_NOT_READY"
 
 
 def test_path_and_body_identity_mismatch_is_rejected(client, telemetry, promoted):
-    r = client.post("/v1/sites/163/entities/215/0/score",
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, 215, 0), "kdvr": 300})
     assert r.status_code == 422
     assert "does not match path" in r.json()["detail"]
 
 
 def test_insufficient_history_is_rejected_clearly(client, telemetry, promoted):
-    r = client.post("/v1/sites/163/entities/215/0/score",
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, 215, 0, n=5)})
     assert r.status_code == 422
     assert "at least" in r.json()["detail"]
 
 
 def test_twenty_records_succeed(client, telemetry, promoted):
-    r = client.post("/v1/sites/163/entities/215/0/score",
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, 215, 0, n=20, offset=80)})
     assert r.status_code == 200
     assert r.json()["decision_time"]
@@ -470,7 +472,7 @@ def test_twenty_records_succeed(client, telemetry, promoted):
 def test_each_new_decision_writes_one_csv_artifact(client, telemetry, promoted):
     client.post("/v1/sessions/reset", json={"entity_id": TRAINED})
     recs = _window(telemetry, 215, 0, n=20, offset=100)
-    first = client.post("/v1/sites/163/entities/215/0/score", json={"records": recs}).json()
+    first = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs}).json()
     assert first["idempotent_replay"] is False
     path = Path(first["artifact_path"])
     assert path.exists() and path.suffix == ".csv"
@@ -487,8 +489,8 @@ def test_retry_reuses_the_artifact_and_creates_no_duplicate_order(client, teleme
                                                                   promoted):
     client.post("/v1/sessions/reset", json={"entity_id": TRAINED})
     recs = _window(telemetry, 215, 0, n=20, offset=120)
-    a = client.post("/v1/sites/163/entities/215/0/score", json={"records": recs}).json()
-    b = client.post("/v1/sites/163/entities/215/0/score", json={"records": recs}).json()
+    a = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs}).json()
+    b = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs}).json()
     assert b["idempotent_replay"] is True
     assert b["artifact_path"] == a["artifact_path"]
     assert b["action"]["should_replenish"] is False
@@ -500,7 +502,7 @@ def test_retry_reuses_the_artifact_and_creates_no_duplicate_order(client, teleme
 
 def test_artifact_retrieval_endpoint(client, telemetry, promoted):
     recs = _window(telemetry, 215, 0, n=20, offset=140)
-    b = client.post("/v1/sites/163/entities/215/0/score", json={"records": recs}).json()
+    b = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs}).json()
     rid = b["artifact_request_id"]
     r = client.get(f"/v1/scoring/artifacts/{rid}")
     assert r.status_code == 200
@@ -515,16 +517,17 @@ def test_interleaved_streams_do_not_contaminate_each_other(sample_csv):
     from feature_engineering import build_features
 
     df = pd.read_csv(sample_csv, parse_dates=["DVRDate", "next_DVRDate"])
-    prepared = prepare(df, include_site_in_entity=True)
+    prepared = prepare(df, include_site_in_entity=True, include_bay_in_entity=True)
     assert prepared.groupby("block_id")["entity_id"].nunique().max() == 1
 
     feats = build_features(prepared)
     for eid in (TRAINED, UNTRAINED, NO_CONFIG):
+        _site, kdvr, chan, bay = eid.split(":")
         sub = feats[feats["entity_id"] == eid]
         solo = build_features(prepare(
-            df[(df.KDVR == int(eid.split(":")[-2]))
-               & (df.ChanNo == int(eid.split(":")[-1]))],
-            include_site_in_entity=True,
+            df[(df.KDVR == int(kdvr)) & (df.ChanNo == int(chan))
+               & (df.BayID == bay)],
+            include_site_in_entity=True, include_bay_in_entity=True,
         ))
         probe = 500
         for col in ("cart_mean_9", "cart_lag_9", "cart_momentum_9", "traffic_in_sum_6"):
@@ -543,13 +546,13 @@ def test_bindings_sessions_and_results_survive_a_restart(client, telemetry, prom
     before = client.get("/v1/logs/scores",
                         params={"entity_id": TRAINED, "limit": 100}).json()["entries"]
     with TestClient(app) as fresh:
-        readiness = fresh.get("/v1/sites/163/entities/215/0/model").json()
+        readiness = fresh.get("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/model").json()
         assert readiness["model_status"] == "ready"
         assert readiness["active"]["model_id"] == promoted
         after = fresh.get("/v1/logs/scores",
                           params={"entity_id": TRAINED, "limit": 100}).json()["entries"]
         assert len(after) >= len(before)
-        r = fresh.post("/v1/sites/163/entities/215/0/score",
+        r = fresh.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                        json={"records": _window(telemetry, 215, 0, n=20, offset=160)})
         assert r.status_code == 200
 

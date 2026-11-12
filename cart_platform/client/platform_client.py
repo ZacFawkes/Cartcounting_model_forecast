@@ -143,13 +143,16 @@ def load_telemetry(path: Path = DATA_FILE) -> pd.DataFrame:
     df.columns = [c.strip().lstrip("\ufeff") for c in df.columns]
     df["DVRDate"] = pd.to_datetime(df["DVRDate"])
     df["next_DVRDate"] = pd.to_datetime(df["next_DVRDate"])
-    # Identity must match the platform: "siteKey:KDVR:ChanNo" unless the
-    # deployment is single-site.
-    from settings import INCLUDE_SITE_IN_ENTITY_ID
+    # Identity must match the platform: "siteKey:KDVR:ChanNo:BayID" unless the
+    # deployment is single-site or has one bay per channel.
+    from data_loader import BAY_COL, normalize_bay_series
+    from settings import INCLUDE_BAY_IN_ENTITY_ID, INCLUDE_SITE_IN_ENTITY_ID
 
     parts = [df["KDVR"].astype(str), df["ChanNo"].astype(str)]
     if INCLUDE_SITE_IN_ENTITY_ID and "siteKey" in df.columns:
         parts.insert(0, df["siteKey"].astype(str))
+    if INCLUDE_BAY_IN_ENTITY_ID and BAY_COL in df.columns:
+        parts.append(normalize_bay_series(df[BAY_COL]))
     df["entity_id"] = parts[0].str.cat(parts[1:], sep=":")
     return df.sort_values(["entity_id", "DVRDate"]).reset_index(drop=True)
 

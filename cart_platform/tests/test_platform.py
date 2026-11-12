@@ -69,20 +69,34 @@ AUDITED = {
     "red_threshold": 15, "amber_threshold": 20, "target_stock": 28,
     "cooldown_min": 30.0, "lead_time_min": 10.0,
 }
-ENTITY = "163:215:0"
+ENTITY = "163:215:0"   # bundled telemetry carries no bay column
 
 
 # --------------------------------------------------------------------------
 # 1. Entity grain and isolation
 # --------------------------------------------------------------------------
-def test_entity_id_is_site_kdvr_and_channel():
+def test_entity_id_is_site_kdvr_channel_and_bay():
     from data_loader import entity_id
 
     df = pd.DataFrame({"KDVR": [215, 215, 216], "ChanNo": [0, 1, 0],
-                       "siteKey": [163, 163, 163]})
+                       "siteKey": [163, 163, 163],
+                       "BayID": ["06053B44-0A47-42FC-BE3E-F88CB85F99D8",
+                                 "bay-b", "bay-c"]})
     assert list(entity_id(df)) == ["215:0", "215:1", "216:0"]
     assert list(entity_id(df, include_site=True)) == [
         "163:215:0", "163:215:1", "163:216:0"]
+    # A bay key is normalised so it can travel inside an id and a URL path.
+    assert list(entity_id(df, include_site=True, include_bay=True)) == [
+        "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8",
+        "163:215:1:bay_b", "163:216:0:bay_c"]
+
+
+def test_entity_id_requires_the_bay_column_when_bay_scoped():
+    from data_loader import entity_id
+
+    df = pd.DataFrame({"KDVR": [215], "ChanNo": [0], "siteKey": [163]})
+    with pytest.raises(ValueError, match="BayID"):
+        entity_id(df, include_site=True, include_bay=True)
 
 
 def test_blocks_never_span_two_entities():

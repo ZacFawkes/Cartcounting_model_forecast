@@ -23,8 +23,10 @@ import settings as C  # noqa: E402
 from training import alert_bands as alb  # noqa: E402
 
 SITE, KDVR, CHAN = 163, 215, 0
-ENTITY = f"{SITE}:{KDVR}:{CHAN}"
-SCORE_URL = f"/v1/sites/{SITE}/entities/{KDVR}/{CHAN}/score"
+BAY = "06053B44_0A47_42FC_BE3E_F88CB85F99D8"
+ENTITY = f"{SITE}:{KDVR}:{CHAN}:{BAY}"
+ENTITY_URL = f"/v1/sites/{SITE}/entities/{KDVR}/{CHAN}/bays/{BAY}"
+SCORE_URL = f"{ENTITY_URL}/score"
 
 UPLOAD_CONFIG = {
     "name": "band_batch",
@@ -183,8 +185,7 @@ def promoted(client, sample_csv):
         time.sleep(0.5)
     assert st["status"] in ("succeeded", "completed"), st
     result = st["results"][ENTITY]
-    client.post(f"/v1/sites/{SITE}/entities/{KDVR}/{CHAN}"
-                f"/models/{result['model_id']}/promote",
+    client.post(f"{ENTITY_URL}/models/{result['model_id']}/promote",
                 json={"promoted_by": "pytest"})
     return result
 
@@ -307,12 +308,12 @@ def test_bands_are_never_reported_as_unconfigured():
 # --------------------------------------------------------------------------
 # D. site-scoped routes
 # --------------------------------------------------------------------------
-def test_entity_identity_includes_the_site(promoted):
+def test_entity_identity_includes_the_site_and_bay(promoted):
     assert promoted["entity_id"] == ENTITY
-    assert ENTITY.count(":") == 2
+    assert ENTITY.count(":") == 3
 
 
-def test_site_less_routes_are_gone(client):
+def test_bay_less_and_site_less_routes_are_gone(client):
     cases = (
         ("post", f"/v1/entities/{KDVR}/{CHAN}/score", {"records": []}),
         ("get", f"/v1/entities/{KDVR}/{CHAN}/model", None),
@@ -326,3 +327,4 @@ def test_site_less_routes_are_gone(client):
         detail = r.json()["detail"]
         assert detail["code"] == "ROUTE_MOVED"
         assert "/v1/sites/" in detail["use"]
+        assert "/bays/" in detail["use"]

@@ -22,7 +22,7 @@ from fastapi import (
     UploadFile,
 )
 
-from settings import INCLUDE_SITE_IN_ENTITY_ID
+from settings import INCLUDE_BAY_IN_ENTITY_ID, INCLUDE_SITE_IN_ENTITY_ID
 
 from data_loader import prepare
 
@@ -342,6 +342,7 @@ def load_precheck_dataset(
     errors = up.validate_schema(
         raw,
         require_site=INCLUDE_SITE_IN_ENTITY_ID,
+        require_bay=INCLUDE_BAY_IN_ENTITY_ID,
     )
 
     if errors:
@@ -361,6 +362,7 @@ def load_precheck_dataset(
     prepared = prepare(
         clean,
         include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID,
+        include_bay_in_entity=INCLUDE_BAY_IN_ENTITY_ID,
     )
 
     sub = prepared[

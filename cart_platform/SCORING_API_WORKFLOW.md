@@ -407,16 +407,20 @@ Content-Type: multipart/form-data
   "entity_defaults": {"max_sequence_gap_min": 15, "cooldown_min": 30,
                       "lead_time_min": 10},
   "entity_overrides": {
-    "163:215:0": {"bay_capacity": 60, "red_threshold": 15,
-                  "amber_threshold": 20, "target_stock": 28}
+    "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {
+        "bay_capacity": 60, "red_threshold": 15,
+        "amber_threshold": 20, "target_stock": 28}
   },
   "auto_start_training": false
 }
 ```
 
-`entity_overrides` is written into `entity_config` — this is how a bay is
-configured for the first time. `entity_defaults` applies to every pair found in
-the file.
+`entity_overrides` is keyed by the full entity id
+`siteKey:KDVR:ChanNo:BayID` and is written into `entity_config` — this is how a
+bay is configured for the first time. `entity_defaults` applies to every bay
+found in the file. The CSV must carry a `BayID` column (map any source name
+with `config.column_mapping.BayID`); a bay key is normalised, so
+`06053B44-0A47-42FC-BE3E-F88CB85F99D8` becomes `06053B44_0A47_42FC_BE3E_F88CB85F99D8`.
 
 ### Response
 
@@ -470,7 +474,7 @@ not guess a physical value.
 
 ```
 POST /v1/training/jobs
-{"upload_id": "upl_...", "entity_ids": ["163:215:0"], "strategy": "per_entity"}
+{"upload_id": "upl_...", "entity_ids": ["163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"], "strategy": "per_entity"}
 ```
 
 Returns immediately with a `job_id`; training runs asynchronously (~40 s per

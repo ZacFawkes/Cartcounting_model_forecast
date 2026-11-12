@@ -22,11 +22,11 @@ UPLOAD_CONFIG = {
     "entity_defaults": {"cooldown_min": 30,
                         "lead_time_min": 10},
     "entity_overrides": {
-        "163:215:0": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
+        "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
                   "target_stock": 28},
     },
 }
-ENTITY = "163:215:0"
+ENTITY = "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +71,7 @@ def trained(client, sample_csv) -> dict:
         time.sleep(1.0)
     assert job["status"] == "succeeded", job.get("error")
     model_id = job["results"][ENTITY]["model_id"]
-    promoted = client.post(f"/v1/sites/163/entities/215/0/models/{model_id}/promote",
+    promoted = client.post(f"/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/models/{model_id}/promote",
                            json={"promoted_by": "pytest"})
     assert promoted.status_code == 200, promoted.text
     return {"upload_id": up["upload_id"], "job_id": job_id, "model_id": model_id,
@@ -121,7 +121,7 @@ def test_scoring_decision_is_enqueued(client, telemetry, trained):
 
     client.post("/v1/sessions/reset", json={"entity_id": ENTITY})
     before = len(outbox.list_events(event_type="scoring.recorded", limit=500))
-    r = client.post("/v1/sites/163/entities/215/0/score", json={"records": _window(telemetry)})
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": _window(telemetry)})
     assert r.status_code == 200
     after = outbox.list_events(event_type="scoring.recorded", limit=500)
     assert len(after) == before + 1
@@ -136,9 +136,9 @@ def test_replayed_decision_does_not_enqueue_twice(client, telemetry, trained):
 
     client.post("/v1/sessions/reset", json={"entity_id": ENTITY})
     recs = _window(telemetry, offset=90)
-    client.post("/v1/sites/163/entities/215/0/score", json={"records": recs})
+    client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs})
     n1 = len(outbox.list_events(event_type="scoring.recorded", limit=500))
-    client.post("/v1/sites/163/entities/215/0/score", json={"records": recs})
+    client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score", json={"records": recs})
     n2 = len(outbox.list_events(event_type="scoring.recorded", limit=500))
     assert n2 == n1
 
@@ -210,7 +210,7 @@ def test_receiver_outage_does_not_fail_scoring(client, telemetry, trained,
     monkeypatch.setattr(pub, "RESULT_RECEIVER_ENABLED", True)
     client.post("/v1/sessions/reset", json={"entity_id": ENTITY})
 
-    r = client.post("/v1/sites/163/entities/215/0/score",
+    r = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                     json={"records": _window(telemetry, offset=140)})
     assert r.status_code == 200, "scoring must not depend on the receiver"
     decision_time = r.json()["decision_time"]

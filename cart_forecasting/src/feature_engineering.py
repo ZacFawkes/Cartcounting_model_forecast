@@ -295,7 +295,9 @@ def candidate_features(frame: pd.DataFrame) -> list[str]:
     for c in frame.columns:
         if c in NON_FEATURE_COLS or c.startswith(LABEL_PREFIXES):
             continue
-        if not np.issubdtype(frame[c].dtype, np.number):
+        # is_numeric_dtype also understands pandas extension dtypes, which
+        # np.issubdtype rejects outright (e.g. a string bay identifier).
+        if not pd.api.types.is_numeric_dtype(frame[c]):
             continue
         cols.append(c)
     return cols

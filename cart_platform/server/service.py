@@ -31,11 +31,12 @@ from settings import (
     BUNDLED_TELEMETRY,
     CAVEAT,
     COST_LAMBDAS,
+    INCLUDE_BAY_IN_ENTITY_ID,
     INCLUDE_SITE_IN_ENTITY_ID,
     MIN_HISTORY_RECORDS,
     RECOMMENDED_HISTORY,
 )
-from data_loader import load_raw, prepare
+from data_loader import BAY_COL, load_raw, prepare
 from feature_engineering import apply_value_clipper, build_features
 from registry import entities as reg
 from registry import models as mreg
@@ -86,11 +87,15 @@ def records_to_frame(records: list[dict], entity: dict | None = None) -> pd.Data
         df["ChanNo"] = entity["chan_no"]
         df["siteKey"] = entity["site_key"]
         df["AreaID"] = entity.get("area_id") or 0
+        if entity.get("bay_id"):
+            df[BAY_COL] = entity["bay_id"]
     else:
         for c, v in (("KDVR", 0), ("ChanNo", 0), ("siteKey", 0), ("AreaID", 0)):
             if c not in df:
                 df[c] = v
-    return prepare(df, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID)
+    include_bay = INCLUDE_BAY_IN_ENTITY_ID and BAY_COL in df.columns
+    return prepare(df, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID,
+                   include_bay_in_entity=include_bay)
 
 
 def _policy(cfg) -> PolicyConfig:
@@ -408,6 +413,7 @@ def score(
         "kdvr": entity["kdvr"],
         "chan_no": entity["chan_no"],
         "site_key": entity["site_key"],
+        "bay_id": entity.get("bay_id"),
         "entity_status": entity["status"],
         "decision_time": ts.isoformat(),
         "current_cart": baseline,
@@ -512,7 +518,8 @@ def bundled_telemetry() -> pd.DataFrame:
     global _BUNDLED
     if _BUNDLED is None:
         _BUNDLED = prepare(
-            load_raw(BUNDLED_TELEMETRY), include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID
+            load_raw(BUNDLED_TELEMETRY), include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID,
+            include_bay_in_entity=False
         )
     return _BUNDLED
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Fortnightly disk retention for retired models.
+# Fortnightly retention sweep: deletes artifacts and database records that are
+# older than one week and no longer needed (retired models, score CSVs already
+# held as scoring_results rows, delivered outbox events, the api_requests log).
+# Champion and candidate models are never touched.
+#
 # Installs/loads a launchd agent that runs every 14 days (1,209,600 s).
 #
 #   bash scripts/install_purge_schedule.sh            # install + load
@@ -14,7 +18,7 @@ PLATFORM_ROOT="$(pwd -P)"
 LABEL="com.cartplatform.purge-retired"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 PYTHON="${PYTHON:-${PLATFORM_ROOT}/../.venv/bin/python}"
-GRACE_DAYS="${GRACE_DAYS:-14}"
+GRACE_DAYS="${GRACE_DAYS:-7}"
 INTERVAL=1209600   # 14 days
 LOG_DIR="${PLATFORM_ROOT}/logs/retention"
 

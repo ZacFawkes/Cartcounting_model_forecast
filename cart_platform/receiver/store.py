@@ -73,12 +73,25 @@ def store_event(event: dict) -> tuple[str, dict]:
 
 
 def _split_entity(entity_id: str | None) -> tuple[int | None, int | None]:
-    """"KDVR:ChanNo" (or "site:KDVR:ChanNo") -> (kdvr, chan_no)."""
+    """Entity id -> (kdvr, chan_no), whatever shape the platform publishes.
+
+    Accepts "KDVR:ChanNo", "site:KDVR:ChanNo", "KDVR:ChanNo:bay" and
+    "site:KDVR:ChanNo:bay". The numeric pair is located positionally rather
+    than from the end, because a bay id is not numeric.
+    """
     if not entity_id:
         return None, None
-    parts = entity_id.split(":")
+    parts = str(entity_id).split(":")
+    if len(parts) >= 4:
+        pair = parts[1:3]
+    elif len(parts) == 3:
+        pair = parts[:2] if not parts[2].lstrip("-").isdigit() else parts[1:3]
+    elif len(parts) == 2:
+        pair = parts
+    else:
+        return None, None
     try:
-        return int(parts[-2]), int(parts[-1])
+        return int(pair[0]), int(pair[1])
     except (ValueError, IndexError):
         return None, None
 

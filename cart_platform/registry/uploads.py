@@ -20,6 +20,7 @@ import pandas as pd
 
 from settings import (
     ALLOWED_UPLOAD_SUFFIXES,
+    INCLUDE_BAY_IN_ENTITY_ID,
     INCLUDE_SITE_IN_ENTITY_ID,
     MAX_UPLOAD_BYTES,
     MIN_TRAIN_DAYS,
@@ -29,7 +30,7 @@ from settings import (
 )
 
 # settings extends sys.path to the modelling pipeline; import after it.
-from data_loader import prepare  # noqa: E402
+from data_loader import BAY_COL, normalize_bay_series, prepare  # noqa: E402
 from registry.database import (  # noqa: E402
     as_json,
     execute,
@@ -79,10 +80,14 @@ def config_fingerprint(config: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def score_url_for(kdvr: int, chan_no: int, site_key: int | None = None) -> str:
-    if INCLUDE_SITE_IN_ENTITY_ID:
-        return f"/v1/sites/{int(site_key)}/entities/{int(kdvr)}/{int(chan_no)}/score"
-    return f"/v1/entities/{int(kdvr)}/{int(chan_no)}/score"
+def score_url_for(kdvr: int, chan_no: int, site_key: int | None = None,
+                  bay_id: str | None = None) -> str:
+    base = (f"/v1/sites/{int(site_key)}/entities/{int(kdvr)}/{int(chan_no)}"
+            if INCLUDE_SITE_IN_ENTITY_ID
+            else f"/v1/entities/{int(kdvr)}/{int(chan_no)}")
+    if INCLUDE_BAY_IN_ENTITY_ID and bay_id:
+        base += f"/bays/{bay_id}"
+    return base + "/score"
 
 
 def _sniff_separator(path: Path) -> str:
@@ -120,7 +125,8 @@ def read_dataset(path: Path, column_mapping: dict | None = None) -> pd.DataFrame
 # --------------------------------------------------------------------------
 # Validation and quality
 # --------------------------------------------------------------------------
-def validate_schema(df: pd.DataFrame, require_site: bool) -> list[str]:
+def validate_schema(df: pd.DataFrame, require_site: bool,
+                    require_bay: bool = False) -> list[str]:
     errors = []
     missing = [c for c in REQUIRED_DATASET_COLUMNS if c not in df.columns]
     if missing:
@@ -129,6 +135,12 @@ def validate_schema(df: pd.DataFrame, require_site: bool) -> list[str]:
         errors.append(
             "siteKey is required because entity identity is site-scoped "
             "(CART_ENTITY_INCLUDE_SITE=1)"
+        )
+    if require_bay and BAY_COL not in df.columns:
+        errors.append(
+            f"{BAY_COL} is required because entity identity is bay-scoped "
+            f"(CART_ENTITY_INCLUDE_BAY=1); map the source column with "
+            f"config.column_mapping.{BAY_COL}"
         )
     if not errors and len(df) == 0:
         errors.append("dataset contains no rows")
@@ -147,6 +159,8 @@ def coerce_types(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     else:
         out["siteKey"] = 0
         warnings.append("siteKey absent; defaulted to 0 (metadata only)")
+    if BAY_COL in out.columns:
+        out[BAY_COL] = normalize_bay_series(out[BAY_COL])
     for c, v in (("AreaID", 0), ("CatID", 0)):
         if c not in out.columns:
             out[c] = v
@@ -165,6 +179,8 @@ def quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, list[str]]:
 
     bad_ts = df["DVRDate"].isna() | df["next_DVRDate"].isna()
     bad_id = df["KDVR"].isna() | df["ChanNo"].isna()
+    if BAY_COL in df.columns:
+        bad_id = bad_id | df[BAY_COL].isna() | (df[BAY_COL].astype(str) == "")
     bad_count = df["Count"].isna()
     negative = (df[["Count", "Count_IN", "Count_OUT"]] < 0).any(axis=1)
     # An interval whose end is not after its start is incomplete / corrupt.
@@ -181,19 +197,20 @@ def quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, list[str]]:
     drop = bad_ts | bad_id | bad_count | negative | incomplete
     clean = df.loc[~drop].copy()
 
-    dup_mask = clean.duplicated(subset=["KDVR", "ChanNo", "DVRDate"], keep="first")
+    identity = ["KDVR", "ChanNo"] + ([BAY_COL] if BAY_COL in clean.columns else [])
+    dup_mask = clean.duplicated(subset=identity + ["DVRDate"], keep="first")
     issues["n_duplicate_records"] = int(dup_mask.sum())
     clean = clean.loc[~dup_mask].copy()
 
     site_conflicts = (
-        clean.groupby(["KDVR", "ChanNo"], observed=True)["siteKey"].nunique()
+        clean.groupby(identity, observed=True)["siteKey"].nunique()
     )
     conflicting = site_conflicts[site_conflicts > 1]
     issues["n_site_mapping_conflicts"] = int(len(conflicting))
     if len(conflicting):
         warnings.append(
-            f"{len(conflicting)} (KDVR,ChanNo) pair(s) map to more than one siteKey: "
-            f"{[f'{k}:{c}' for k, c in conflicting.index.tolist()]}"
+            f"{len(conflicting)} identity key(s) map to more than one siteKey: "
+            f"{[':'.join(map(str, k)) for k in conflicting.index.tolist()]}"
         )
 
     issues["n_rows_usable"] = int(len(clean))
@@ -203,7 +220,7 @@ def quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, list[str]]:
         ("n_missing_count", "missing Count"),
         ("n_negative_values", "negative measurements"),
         ("n_incomplete_intervals", "incomplete intervals (end <= start)"),
-        ("n_duplicate_records", "duplicate (KDVR,ChanNo,DVRDate) rows"),
+        ("n_duplicate_records", "duplicate (identity, DVRDate) rows"),
     ):
         if issues[key]:
             warnings.append(f"dropped {issues[key]} row(s): {label}")
@@ -217,12 +234,14 @@ def quality_report(df: pd.DataFrame) -> tuple[pd.DataFrame, dict, list[str]]:
 # Discovery — scoped to this upload only
 # --------------------------------------------------------------------------
 def discover(prepared: pd.DataFrame) -> pd.DataFrame:
-    """Distinct (KDVR, ChanNo) streams present in THIS upload."""
+    """Distinct (KDVR, ChanNo[, bay]) streams present in THIS upload."""
     g = prepared.groupby("entity_id", observed=True)
     out = pd.DataFrame({
         "kdvr": g["KDVR"].first().astype(int),
         "chan_no": g["ChanNo"].first().astype(int),
         "site_key": g["siteKey"].first().astype(int),
+        "bay_id": (g[BAY_COL].first().astype(str) if BAY_COL in prepared.columns
+                   else pd.Series(None, index=g.size().index, dtype="object")),
         "n_records": g.size(),
         "n_days": g["date"].nunique(),
         "first_record": g["DVRDate"].min(),
@@ -305,7 +324,8 @@ def load_prepared_upload(upload_id: str) -> pd.DataFrame:
     df = read_dataset(Path(row["stored_path"]), cfg.get("column_mapping"))
     df, _ = coerce_types(df)
     clean, _, _ = quality_report(df)
-    return prepare(clean, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID)
+    return prepare(clean, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID,
+                   include_bay_in_entity=INCLUDE_BAY_IN_ENTITY_ID)
 
 
 def prepared_entity_frame(upload_id: str, entity_id: str) -> pd.DataFrame:
@@ -329,7 +349,8 @@ def api_entity_rows(upload_id: str) -> list[dict]:
     for r in get_upload_entities(upload_id):
         out.append({
             "entity_id": r["entity_id"], "kdvr": r["kdvr"], "chan_no": r["chan_no"],
-            "site_key": r["site_key"], "records": r["n_records"], "days": r["n_days"],
+            "site_key": r["site_key"], "bay_id": r.get("bay_id"),
+            "records": r["n_records"], "days": r["n_days"],
             "shortage_events": r["shortage_events"], "score_url": r["score_url"],
             "trainable": bool(r["trainable"]),
             "blocking_reasons": from_json(r.get("blocking_reasons"), []) or [],
@@ -374,7 +395,8 @@ def register_upload(
         )
 
     raw = read_dataset(source_path, config.get("column_mapping"))
-    errors = validate_schema(raw, require_site=INCLUDE_SITE_IN_ENTITY_ID)
+    errors = validate_schema(raw, require_site=INCLUDE_SITE_IN_ENTITY_ID,
+                             require_bay=INCLUDE_BAY_IN_ENTITY_ID)
     if errors:
         raise UploadRejected("dataset schema validation failed", errors)
 
@@ -382,7 +404,8 @@ def register_upload(
     clean, quality, qwarn = quality_report(typed)
     warnings += qwarn
 
-    prepared = prepare(clean, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID)
+    prepared = prepare(clean, include_site_in_entity=INCLUDE_SITE_IN_ENTITY_ID,
+                       include_bay_in_entity=INCLUDE_BAY_IN_ENTITY_ID)
     found = discover(prepared)
 
     upload_id = new_upload_id()
@@ -410,6 +433,9 @@ def register_upload(
     for _, r in found.iterrows():
         eid = r["entity_id"]
         site_key = int(r["site_key"])
+        bay_id = r.get("bay_id")
+        bay_id = None if bay_id is None or pd.isna(bay_id) or str(bay_id) == "" \
+            else str(bay_id)
         if reg.get_site(site_key) is None:
             # The entity FK requires the site row to exist first.
             reg.upsert_site(site_key, updated_by=f"upload:{upload_id}",
@@ -419,7 +445,9 @@ def register_upload(
         existing_entity = reg.try_get_entity(eid)
         fields = {
             "kdvr": int(r["kdvr"]), "chan_no": int(r["chan_no"]), "site_key": site_key,
-            "display_name": f"Site {site_key} / DVR {int(r['kdvr'])} ch{int(r['chan_no'])}",
+            "bay_id": bay_id,
+            "display_name": reg.entity_display_name(site_key, int(r["kdvr"]),
+                                              int(r["chan_no"]), bay_id),
             "n_days_history": int(r["n_days"]),
             "last_upload_id": upload_id,
         }
@@ -450,16 +478,16 @@ def register_upload(
             "cart_max": float(r["cart_max"]),
             "has_physical_config": entity_cfg.get("bay_capacity") is not None,
         }
-        url = score_url_for(int(r["kdvr"]), int(r["chan_no"]), site_key)
+        url = score_url_for(int(r["kdvr"]), int(r["chan_no"]), site_key, bay_id)
         execute(
             """INSERT INTO upload_entities
-               (upload_id, entity_id, kdvr, chan_no, site_key, n_records, n_usable,
-                n_days, first_record, last_record, cart_min, cart_max, cart_median,
-                shortage_events, trainable, blocking_reasons, quality_json,
-                score_url, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (upload_id, entity_id, kdvr, chan_no, site_key, bay_id, n_records,
+                n_usable, n_days, first_record, last_record, cart_min, cart_max,
+                cart_median, shortage_events, trainable, blocking_reasons,
+                quality_json, score_url, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
-                upload_id, eid, int(r["kdvr"]), int(r["chan_no"]), site_key,
+                upload_id, eid, int(r["kdvr"]), int(r["chan_no"]), site_key, bay_id,
                 int(r["n_records"]), int(r["n_records"]), int(r["n_days"]),
                 str(r["first_record"]), str(r["last_record"]), float(r["cart_min"]),
                 float(r["cart_max"]), float(r["cart_median"]),
@@ -469,7 +497,7 @@ def register_upload(
         )
         entities_out.append({
             "entity_id": eid, "kdvr": int(r["kdvr"]), "chan_no": int(r["chan_no"]),
-            "site_key": site_key, "records": int(r["n_records"]),
+            "site_key": site_key, "bay_id": bay_id, "records": int(r["n_records"]),
             "days": int(r["n_days"]), "shortage_events": n_events,
             "score_url": url, "trainable": bool(trainable),
             "blocking_reasons": reasons,

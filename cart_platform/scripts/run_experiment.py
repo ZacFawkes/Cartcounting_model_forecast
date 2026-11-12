@@ -137,15 +137,26 @@ def pretty(obj) -> None:
     )
 
 
-def parts(entity_id: str) -> tuple[str, str, str]:
+def parts(entity_id: str) -> tuple[str, str, str, str]:
     values = entity_id.split(":")
 
-    if len(values) != 3:
+    if len(values) == 3:
+        # Pre-bay deployment: the entity has no bay segment.
+        values = values + [""]
+
+    if len(values) != 4:
         raise SystemExit(
-            'Entity must use "siteKey:KDVR:ChanNo"'
+            'Entity must use "siteKey:KDVR:ChanNo:BayID"'
         )
 
     return tuple(values)
+
+
+def entity_path(base: str, entity: str) -> str:
+    """URL prefix addressing one bay (or one channel on a pre-bay platform)."""
+    site, kdvr, chan, bay = parts(entity)
+    url = f"{base}/v1/sites/{site}/entities/{kdvr}/{chan}"
+    return f"{url}/bays/{bay}" if bay else url
 
 
 def unwrap(value):
@@ -578,12 +589,7 @@ def promote(
     model_id: str,
 ) -> None:
 
-    site, kdvr, chan = parts(entity)
-
-    url = (
-        f"{base}/v1/sites/{site}/entities/"
-        f"{kdvr}/{chan}/models/{model_id}/promote"
-    )
+    url = f"{entity_path(base, entity)}/models/{model_id}/promote"
 
     response = requests.post(
         url,
@@ -810,12 +816,7 @@ def score_all(
             f"Need {window} records, got {len(df)}"
         )
 
-    site, kdvr, chan = parts(entity)
-
-    url = (
-        f"{base}/v1/sites/{site}/entities/"
-        f"{kdvr}/{chan}/score"
-    )
+    url = f"{entity_path(base, entity)}/score"
 
     session = requests.Session()
 
@@ -845,6 +846,10 @@ def score_all(
 
             if params:
                 payload["params"] = params
+
+            if n == 0:
+                log(f"SCORE REQUEST: POST {url}")
+                pretty(payload)
 
             response = session.post(
                 url,
@@ -1143,7 +1148,7 @@ def main() -> None:
 
     p.add_argument(
         "--base-url",
-        default="http://127.0.0.1:8100",
+        default="http://192.168.23.222:8100",
     )
 
     p.add_argument(

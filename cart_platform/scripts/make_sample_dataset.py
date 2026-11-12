@@ -1,7 +1,7 @@
 """Generate a multi-entity sample dataset for the on-demand workflow.
 
-Derives three (KDVR, ChanNo) streams from the real Site 163 telemetry so the
-upload contains more than one pair and selected-entity training can be
+Derives three (KDVR, ChanNo, BayID) streams from the real Site 163 telemetry so
+the upload contains more than one bay and selected-entity training can be
 demonstrated without touching the others.
 
     python scripts/make_sample_dataset.py [out.csv]
@@ -17,6 +17,13 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "cart_forecasting" / "data" / "real_data.csv"
 DEFAULT_OUT = Path(__file__).resolve().parents[1] / "data" / "sample_multi_entity.csv"
+
+# Bay identity is part of the entity id, so the sample carries real bay keys.
+BAYS = {
+    (215, 0): "06053B44_0A47_42FC_BE3E_F88CB85F99D8",
+    (215, 1): "1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0",
+    (300, 2): "2C2D3E4F_5061_7283_94A5_B6C7D8E9F001",
+}
 
 # (kdvr, chan_no, site_key, cart_scale, traffic_scale, seed)
 STREAMS = [
@@ -40,6 +47,7 @@ def build(source: Path = SOURCE) -> pd.DataFrame:
         df["KDVR"] = kdvr
         df["ChanNo"] = chan
         df["siteKey"] = site
+        df["BayID"] = BAYS[(kdvr, chan)]
         df["AreaID"] = 69 + chan
         noise = rng.normal(0, 1.5, len(df))
         df["Count"] = np.clip(
@@ -60,7 +68,8 @@ def build(source: Path = SOURCE) -> pd.DataFrame:
     out["CountID"] = range(1, len(out) + 1)
     out["CNN_Index"] = range(1, len(out) + 1)
     cols = ["CountID", "DVRDate", "next_DVRDate", "KDVR", "ChanNo", "CatID",
-            "AreaID", "Count", "CNN_Index", "siteKey", "Count_IN", "Count_OUT"]
+            "AreaID", "Count", "CNN_Index", "siteKey", "BayID", "Count_IN",
+            "Count_OUT"]
     return out[[c for c in cols if c in out.columns]]
 
 
@@ -70,7 +79,7 @@ def main() -> None:
     df = build()
     df.to_csv(out_path, index=False)
     summary = (
-        df.groupby(["KDVR", "ChanNo"])
+        df.groupby(["KDVR", "ChanNo", "BayID"])
         .agg(rows=("Count", "size"), site=("siteKey", "first"),
              cart_min=("Count", "min"), cart_max=("Count", "max"))
     )

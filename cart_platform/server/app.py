@@ -64,7 +64,8 @@ app = FastAPI(
     version=C.API_VERSION,
     description=(
         "Multi-entity cart availability forecasting and replenishment. The modelling "
-        "grain is one camera stream: entity_id = KDVR:ChanNo. Parameters resolve "
+        "grain is one camera stream watching one bay: entity_id = "
+        "siteKey:KDVR:ChanNo:bay_id. Parameters resolve "
         "request override > entity/site config > system default, and every response "
         "records which level supplied each value."
     ),
@@ -137,7 +138,7 @@ async def _trace(request: Request, call_next):
     return response
 
 
-def _resolve_entity_id(entity_id, kdvr, chan_no, site_key) -> str:
+def _resolve_entity_id(entity_id, kdvr, chan_no, site_key, bay_id=None) -> str:
     if entity_id:
         return entity_id
     if kdvr is None or chan_no is None:
@@ -145,7 +146,23 @@ def _resolve_entity_id(entity_id, kdvr, chan_no, site_key) -> str:
             status_code=422,
             detail="supply entity_id, or both kdvr and chan_no",
         )
-    return reg.entity_id_for(kdvr, chan_no, site_key)
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None:
+        # The channel alone no longer identifies a bay. One registered bay is
+        # unambiguous; several are not, and are never picked arbitrarily.
+        matches = reg.entity_ids_for_channel(site_key, kdvr, chan_no)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "bay_id is required: more than one bay is "
+                                   "registered for this channel",
+                        "candidates": matches},
+            )
+    try:
+        return reg.entity_id_for(kdvr, chan_no, site_key, bay_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 # --------------------------------------------------------------------------
@@ -200,7 +217,8 @@ def model_info() -> dict:
                     "Identical output from 12 upward; 20 gives margin against gaps.",
         },
         "entity_grain": "KDVR:ChanNo"
-        + (" prefixed by siteKey" if C.INCLUDE_SITE_IN_ENTITY_ID else ""),
+        + (" prefixed by siteKey" if C.INCLUDE_SITE_IN_ENTITY_ID else "")
+        + (" and suffixed by bay_id" if C.INCLUDE_BAY_IN_ENTITY_ID else ""),
         "caveat": C.CAVEAT,
     }
 
@@ -252,7 +270,8 @@ def get_entity(entity_id: str) -> dict:
 @app.put("/v1/entities")
 def put_entity(req: EntityUpsert) -> dict:
     data = req.model_dump(exclude={"entity_id", "updated_by"})
-    entity_id = req.entity_id or reg.entity_id_for(req.kdvr, req.chan_no, req.site_key)
+    entity_id = req.entity_id or reg.entity_id_for(req.kdvr, req.chan_no, req.site_key,
+                                                   req.bay_id)
     try:
         return {"entity": reg.upsert_entity(entity_id, req.updated_by, **data)}
     except ValueError as exc:
@@ -295,7 +314,8 @@ def bootstrap(adopt_model: bool = True) -> dict:
 @app.post("/v1/score", response_model=ScoreResponse)
 def score(req: ScoreRequest, request: Request) -> ScoreResponse:
     rid = getattr(request.state, "request_id", None)
-    entity_id = _resolve_entity_id(req.entity_id, req.kdvr, req.chan_no, req.site_key)
+    entity_id = _resolve_entity_id(req.entity_id, req.kdvr, req.chan_no, req.site_key,
+                                   req.bay_id)
     t0 = time.perf_counter()
     try:
         result = svc.score(

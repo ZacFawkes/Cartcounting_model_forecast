@@ -25,14 +25,14 @@ import settings as C  # noqa: E402
 
 # Three entities, three genuinely different threshold sets.
 OVERRIDES = {
-    "163:215:0": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
+    "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
               "target_stock": 28},
-    "163:215:1": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
+    "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
               "target_stock": 40},
-    "177:300:2": {"bay_capacity": 120, "red_threshold": 25, "amber_threshold": 35,
+    "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001": {"bay_capacity": 120, "red_threshold": 25, "amber_threshold": 35,
               "target_stock": 50},
 }
-EXPECTED = {"163:215:0": (15, 20), "163:215:1": (20, 28), "177:300:2": (25, 35)}
+EXPECTED = {"163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": (15, 20), "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0": (20, 28), "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001": (25, 35)}
 
 UPLOAD_CONFIG = {
     "name": "entity_config_regression",
@@ -201,7 +201,7 @@ def test_b_trained_features_match_the_frozen_thresholds(trained_all, telemetry):
     from data_loader import prepare
     from feature_engineering import build_features
 
-    entity_id = "177:300:2"
+    entity_id = "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"
     red, amber = EXPECTED[entity_id]
     sub = telemetry[(telemetry.KDVR == 300) & (telemetry.ChanNo == 2)].head(400)
     feats = build_features(prepare(sub), red_threshold=red, amber_threshold=amber)
@@ -309,14 +309,14 @@ def test_c_calibration_records_the_red_it_was_fitted_against(client, trained_all
 # ==========================================================================
 def test_d_config_change_does_not_mutate_the_existing_model(client, trained_all,
                                                             upload, telemetry):
-    entity_id = "177:300:2"
+    entity_id = "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"
     old_model = trained_all["results"][entity_id]["model_id"]
     old_report = client.get(
         f"/v1/training/jobs/{trained_all['job_id']}/backtests/policy_replay",
         params={"entity_id": entity_id}).json()
 
     # Promote first so the operational path is live, then change RED 25 -> 30.
-    client.post(f"/v1/sites/177/entities/300/2/models/{old_model}/promote",
+    client.post(f"/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/models/{old_model}/promote",
                 json={"promoted_by": "pytest"})
     r = client.put("/v1/entities", json={"entity_id": entity_id,
                                          "red_threshold": 30,
@@ -325,7 +325,7 @@ def test_d_config_change_does_not_mutate_the_existing_model(client, trained_all,
     assert r.json()["entity"]["red_threshold"] == 30
 
     # 1. the existing model stays frozen at 25
-    readiness = client.get("/v1/sites/177/entities/300/2/model").json()
+    readiness = client.get("/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/model").json()
     assert readiness["active"]["model"]["red_model"] == 25
 
     # 2. the historical backtest is unchanged
@@ -337,7 +337,7 @@ def test_d_config_change_does_not_mutate_the_existing_model(client, trained_all,
     assert json.loads(again["frozen_config_json"])["red_model"] == 25
 
     # 3. operational scoring uses 30 and says so
-    body = client.post("/v1/sites/177/entities/300/2/score",
+    body = client.post("/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/score",
                        json={"records": _window(telemetry, 300, 2)}).json()
     cfg = body["resolved_config"]
     assert cfg["red_threshold"]["value"] == 30
@@ -352,16 +352,16 @@ def test_d_a_new_training_job_freezes_the_new_value(client, upload, trained_all)
     """A new candidate must pick up RED=30, not inherit the old model's 25."""
     r = client.post("/v1/training/jobs",
                     json={"upload_id": upload["upload_id"],
-                          "entity_ids": ["177:300:2"]})
+                          "entity_ids": ["177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"]})
     job = _wait(client, r.json()["job_id"])
     assert job["status"] == "succeeded", job.get("results")
-    result = job["results"]["177:300:2"]
+    result = job["results"]["177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"]
     assert float(result["frozen_thresholds"]["red_model"]) == 30, \
         "new training must freeze the CURRENT entity config"
     assert float(result["frozen_thresholds"]["amber_model"]) == 35
 
     # The previously promoted model is still the active one and still at 25.
-    readiness = client.get("/v1/sites/177/entities/300/2/model").json()
+    readiness = client.get("/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/model").json()
     assert readiness["active"]["model"]["red_model"] == 25
     assert readiness["model_status"] == "ready"
 
@@ -371,39 +371,39 @@ def test_d_a_new_training_job_freezes_the_new_value(client, upload, trained_all)
 # ==========================================================================
 def test_e_promotion_affects_only_that_entity(client, trained_all):
     before = {e: client.get(
-        "/v1/sites/{}/entities/{}/{}/model".format(*e.split(":"))).json()
-        for e in ("163:215:0", "163:215:1")}
-    model_215_0 = trained_all["results"]["163:215:0"]["model_id"]
-    r = client.post(f"/v1/sites/163/entities/215/0/models/{model_215_0}/promote",
+        "/v1/sites/{}/entities/{}/{}/bays/{}/model".format(*e.split(":"))).json()
+        for e in ("163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8", "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0")}
+    model_215_0 = trained_all["results"]["163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"]["model_id"]
+    r = client.post(f"/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/models/{model_215_0}/promote",
                     json={"promoted_by": "pytest"})
     assert r.status_code == 200
-    assert client.get("/v1/sites/163/entities/215/0/model").json()["model_status"] == "ready"
-    after_215_1 = client.get("/v1/sites/163/entities/215/1/model").json()
-    assert after_215_1["model_status"] == before["163:215:1"]["model_status"]
+    assert client.get("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/model").json()["model_status"] == "ready"
+    after_215_1 = client.get("/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/model").json()
+    assert after_215_1["model_status"] == before["163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0"]["model_status"]
     assert after_215_1["active"] is None
 
 
 def test_e_scoring_uses_the_right_frozen_config_per_entity(client, telemetry,
                                                            trained_all):
     """215:0 is promoted at 15/20; 300:2 at 25/35. No cross-contamination."""
-    b0 = client.post("/v1/sites/163/entities/215/0/score",
+    b0 = client.post("/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score",
                      json={"records": _window(telemetry, 215, 0)}).json()
     assert b0["frozen_model_config"]["red_model"] == 15
     assert b0["resolved_config"]["red_model"]["value"] == 15
-    assert b0["model_id"] == trained_all["results"]["163:215:0"]["model_id"]
+    assert b0["model_id"] == trained_all["results"]["163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"]["model_id"]
 
-    b2 = client.post("/v1/sites/177/entities/300/2/score",
+    b2 = client.post("/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/score",
                      json={"records": _window(telemetry, 300, 2)}).json()
     assert b2["frozen_model_config"]["red_model"] == 25
-    assert b2["model_id"] == trained_all["results"]["177:300:2"]["model_id"]
+    assert b2["model_id"] == trained_all["results"]["177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"]["model_id"]
     assert b0["model_id"] != b2["model_id"]
 
 
 def test_e_operational_recommendation_uses_effective_business_config(client,
                                                                      telemetry):
     """Replenishment sizing must use target_stock=50 for 300:2, not 28."""
-    client.post("/v1/sessions/reset", json={"entity_id": "177:300:2"})
-    body = client.post("/v1/sites/177/entities/300/2/score",
+    client.post("/v1/sessions/reset", json={"entity_id": "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"})
+    body = client.post("/v1/sites/177/entities/300/2/bays/2C2D3E4F_5061_7283_94A5_B6C7D8E9F001/score",
                        json={"records": _window(telemetry, 300, 2, offset=200),
                              "params": {"risk_threshold": 0.0}}).json()
     cfg = body["resolved_config"]
@@ -414,7 +414,7 @@ def test_e_operational_recommendation_uses_effective_business_config(client,
 
 
 def test_e_unpromoted_entity_is_not_scoreable(client, telemetry):
-    r = client.post("/v1/sites/163/entities/215/1/score",
+    r = client.post("/v1/sites/163/entities/215/1/bays/1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0/score",
                     json={"records": _window(telemetry, 215, 1)})
     assert r.status_code == 409
     assert r.json()["detail"]["code"] == "MODEL_NOT_READY"
@@ -456,15 +456,15 @@ def test_f_concurrent_resolution_is_isolated(isolated_db):
 def test_f_snapshots_are_immutable_value_objects(isolated_db):
     from training.model_config import resolve_for_training
 
-    a = resolve_for_training("163:215:0", "jobA")
-    b = resolve_for_training("177:300:2", "jobB")
+    a = resolve_for_training("163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8", "jobA")
+    b = resolve_for_training("177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001", "jobB")
     assert a.frozen.red_model == 15
     assert b.frozen.red_model != a.frozen.red_model
     with pytest.raises(Exception):
         a.frozen.red_model = 99          # frozen dataclass
     # Mutating one snapshot's operational dict cannot touch the other.
     a.operational["target_stock"] = 999
-    c = resolve_for_training("163:215:0", "jobC")
+    c = resolve_for_training("163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8", "jobC")
     assert c.operational["target_stock"] == 28
 
 
@@ -477,7 +477,7 @@ def test_g_legacy_bundle_without_model_config_still_loads(isolated_db, trained_a
     from registry.models import clear_cache, load_model
     from training.model_config import FrozenModelConfig
 
-    src = Path(trained_all["results"]["163:215:0"]["artifact_path"])
+    src = Path(trained_all["results"]["163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"]["artifact_path"])
     with open(src, "rb") as fh:
         bundle = pickle.load(fh)
     for key in ("model_config", "config_hash", "effective_config_at_training",
@@ -570,7 +570,7 @@ def test_h_receiver_accepts_the_enriched_events(receiver_client, trained_all,
 
     rows = receiver_client.get("/v1/results/backtest",
                                params={"job_id": trained_all["job_id"],
-                                       "entity_id": "177:300:2"}).json()
+                                       "entity_id": "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"}).json()
     assert rows["total"] >= 1
     stored = receiver_client.get(
         f"/v1/results/events/{rows['items'][0]['event_id']}").json()
@@ -637,7 +637,7 @@ def test_i_training_job_reports_invalid_config_without_falling_back(client, uplo
     from registry import entities as reg
     from registry.database import execute, utc_now
 
-    entity_id = "163:215:1"
+    entity_id = "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0"
     reg.upsert_entity(entity_id, red_threshold=50, amber_threshold=20)
     r = client.post("/v1/training/jobs",
                     json={"upload_id": upload["upload_id"], "entity_ids": [entity_id]})

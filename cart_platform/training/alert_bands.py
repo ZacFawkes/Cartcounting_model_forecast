@@ -141,8 +141,8 @@ def fit_bands(risk, seed: int = ALERT_BAND_SEED) -> dict:
     # Boundary sits between the clusters, not at a centroid: the midpoint of
     # the gap the data itself left.
     
-    # band_w = clusters[1]["risk_min"]
-    # band_c = clusters[2]["risk_min"]
+    # band_w = 0.5
+    # band_c = 0.6
     band_w = (clusters[0]["risk_max"] + clusters[1]["risk_min"]) / 2.0
     band_c = (clusters[1]["risk_max"] + clusters[2]["risk_min"]) / 2.0
     diagnostics["cluster_sizes"] = sizes

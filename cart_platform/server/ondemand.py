@@ -50,6 +50,7 @@ class ColumnMapping(BaseModel):
     KDVR: str = "KDVR"
     ChanNo: str = "ChanNo"
     siteKey: str | None = "siteKey"
+    BayID: str | None = "BayID"
     DVRDate: str = "DVRDate"
     next_DVRDate: str = "next_DVRDate"
     Count: str = "Count"
@@ -72,7 +73,8 @@ class UploadConfig(BaseModel):
         for k in v:
             if ":" not in str(k):
                 raise ValueError(
-                    f"entity_overrides key '{k}' must be an entity id like '215:0'"
+                    f"entity_overrides key '{k}' must be an entity id like "
+                    f"'163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8'"
                 )
         return v
 
@@ -106,6 +108,7 @@ class EntityScoreRequest(BaseModel):
     kdvr: int | None = None
     chan_no: int | None = None
     site_key: int | None = None
+    bay_id: str | None = None
     client: str | None = None
 
 
@@ -428,8 +431,12 @@ def job_calibration(job_id: str, entity_id: str | None = None) -> dict:
 # --------------------------------------------------------------------------
 # Model bindings and promotion
 # --------------------------------------------------------------------------
-def _entity_from_path(kdvr: int, chan_no: int, site_key: int | None = None) -> str:
-    entity_id = reg.entity_id_for(kdvr, chan_no, site_key)
+def _entity_from_path(kdvr: int, chan_no: int, site_key: int | None = None,
+                      bay_id: str | None = None) -> str:
+    try:
+        entity_id = reg.entity_id_for(kdvr, chan_no, site_key, bay_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     try:
         reg.get_entity(entity_id)
     except reg.UnknownEntity as exc:
@@ -437,29 +444,31 @@ def _entity_from_path(kdvr: int, chan_no: int, site_key: int | None = None) -> s
     return entity_id
 
 
-def _gone(kdvr: int, chan_no: int, suffix: str) -> None:
-    """Entity routes are site-scoped. Point the caller at the new URL."""
+def _gone(kdvr: int, chan_no: int, suffix: str, bay_id: str | None = None) -> None:
+    """Entity routes are site- (and bay-) scoped. Point the caller at the new URL."""
+    bay = f"/bays/{bay_id or '{bay_id}'}" if C.INCLUDE_BAY_IN_ENTITY_ID else ""
     raise HTTPException(
         status_code=410,
         detail={
             "code": "ROUTE_MOVED",
-            "message": "entity routes are site-scoped; the site is part of the "
-                       "entity identity and cannot be inferred",
-            "use": f"/v1/sites/{{siteKey}}/entities/{kdvr}/{chan_no}{suffix}",
+            "message": "entity routes are site- and bay-scoped; the site and the "
+                       "bay are part of the entity identity and cannot be inferred",
+            "use": f"/v1/sites/{{siteKey}}/entities/{kdvr}/{chan_no}{bay}{suffix}",
         },
     )
 
 
-def _model_readiness(site_key: int, kdvr: int, chan_no: int) -> dict:
-    entity_id = _entity_from_path(kdvr, chan_no, site_key)
+def _model_readiness(site_key: int, kdvr: int, chan_no: int,
+                     bay_id: str | None = None) -> dict:
+    entity_id = _entity_from_path(kdvr, chan_no, site_key, bay_id)
     out = bind.readiness(entity_id)
-    out["score_url"] = up.score_url_for(kdvr, chan_no, site_key)
+    out["score_url"] = up.score_url_for(kdvr, chan_no, site_key, bay_id)
     return out
 
 
 def _promote(site_key: int, kdvr: int, chan_no: int, model_id: str,
-             req: PromoteRequest) -> dict:
-    entity_id = _entity_from_path(kdvr, chan_no, site_key)
+             req: PromoteRequest, bay_id: str | None = None) -> dict:
+    entity_id = _entity_from_path(kdvr, chan_no, site_key, bay_id)
     try:
         return bind.promote(entity_id, model_id, req.promoted_by,
                             req.audited_exception_reason)
@@ -474,54 +483,88 @@ def _promote(site_key: int, kdvr: int, chan_no: int, model_id: str,
         )
 
 
-def _rollback(site_key: int, kdvr: int, chan_no: int, req: PromoteRequest) -> dict:
-    entity_id = _entity_from_path(kdvr, chan_no, site_key)
+def _rollback(site_key: int, kdvr: int, chan_no: int, req: PromoteRequest,
+              bay_id: str | None = None) -> dict:
+    entity_id = _entity_from_path(kdvr, chan_no, site_key, bay_id)
     try:
         return bind.rollback(entity_id, req.promoted_by)
     except bind.BindingNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@router.get("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/bays/{bay_id}/model")
+def entity_model_bay_scoped(site_key: int, kdvr: int, chan_no: int,
+                            bay_id: str) -> dict:
+    return _model_readiness(site_key, kdvr, chan_no, bay_id)
+
+
+@router.post("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/bays/{bay_id}"
+             "/models/{model_id}/promote")
+def promote_model_bay_scoped(site_key: int, kdvr: int, chan_no: int, bay_id: str,
+                             model_id: str, req: PromoteRequest) -> dict:
+    return _promote(site_key, kdvr, chan_no, model_id, req, bay_id)
+
+
+@router.post("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/bays/{bay_id}"
+             "/models/rollback")
+def rollback_model_bay_scoped(site_key: int, kdvr: int, chan_no: int, bay_id: str,
+                              req: PromoteRequest) -> dict:
+    return _rollback(site_key, kdvr, chan_no, req, bay_id)
+
+
 @router.get("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/model")
-def entity_model_site_scoped(site_key: int, kdvr: int, chan_no: int) -> dict:
-    return _model_readiness(site_key, kdvr, chan_no)
+def entity_model_site_scoped(site_key: int, kdvr: int, chan_no: int,
+                             bay_id: str | None = None) -> dict:
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None:
+        _gone(kdvr, chan_no, "/model")
+    return _model_readiness(site_key, kdvr, chan_no, bay_id)
 
 
 @router.post("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}"
              "/models/{model_id}/promote")
 def promote_model_site_scoped(site_key: int, kdvr: int, chan_no: int,
-                              model_id: str, req: PromoteRequest) -> dict:
-    return _promote(site_key, kdvr, chan_no, model_id, req)
+                              model_id: str, req: PromoteRequest,
+                              bay_id: str | None = None) -> dict:
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None:
+        _gone(kdvr, chan_no, f"/models/{model_id}/promote")
+    return _promote(site_key, kdvr, chan_no, model_id, req, bay_id)
 
 
 @router.post("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/models/rollback")
 def rollback_model_site_scoped(site_key: int, kdvr: int, chan_no: int,
-                               req: PromoteRequest) -> dict:
-    return _rollback(site_key, kdvr, chan_no, req)
+                               req: PromoteRequest,
+                               bay_id: str | None = None) -> dict:
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None:
+        _gone(kdvr, chan_no, "/models/rollback")
+    return _rollback(site_key, kdvr, chan_no, req, bay_id)
 
 
 # --- legacy, site-less forms -------------------------------------------
 @router.get("/v1/entities/{kdvr}/{chan_no}/model")
-def entity_model(kdvr: int, chan_no: int, site_key: int | None = None) -> dict:
-    if C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None:
+def entity_model(kdvr: int, chan_no: int, site_key: int | None = None,
+                 bay_id: str | None = None) -> dict:
+    if (C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None) or (
+            C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None):
         _gone(kdvr, chan_no, "/model")
-    return _model_readiness(site_key, kdvr, chan_no)
+    return _model_readiness(site_key, kdvr, chan_no, bay_id)
 
 
 @router.post("/v1/entities/{kdvr}/{chan_no}/models/{model_id}/promote")
 def promote_model(kdvr: int, chan_no: int, model_id: str, req: PromoteRequest,
-                  site_key: int | None = None) -> dict:
-    if C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None:
+                  site_key: int | None = None, bay_id: str | None = None) -> dict:
+    if (C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None) or (
+            C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None):
         _gone(kdvr, chan_no, f"/models/{model_id}/promote")
-    return _promote(site_key, kdvr, chan_no, model_id, req)
+    return _promote(site_key, kdvr, chan_no, model_id, req, bay_id)
 
 
 @router.post("/v1/entities/{kdvr}/{chan_no}/models/rollback")
 def rollback_model(kdvr: int, chan_no: int, req: PromoteRequest,
-                   site_key: int | None = None) -> dict:
-    if C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None:
+                   site_key: int | None = None, bay_id: str | None = None) -> dict:
+    if (C.INCLUDE_SITE_IN_ENTITY_ID and site_key is None) or (
+            C.INCLUDE_BAY_IN_ENTITY_ID and bay_id is None):
         _gone(kdvr, chan_no, "/models/rollback")
-    return _rollback(site_key, kdvr, chan_no, req)
+    return _rollback(site_key, kdvr, chan_no, req, bay_id)
 
 
 # --------------------------------------------------------------------------
@@ -585,9 +628,10 @@ def _score_entity(entity_id: str, req: EntityScoreRequest, request: Request,
 @router.post("/v1/entities/{kdvr}/{chan_no}/score", response_model=ScoreResponse)
 def score_entity(kdvr: int, chan_no: int, req: EntityScoreRequest,
                  request: Request) -> ScoreResponse:
-    if C.INCLUDE_SITE_IN_ENTITY_ID and req.site_key is None:
+    if (C.INCLUDE_SITE_IN_ENTITY_ID and req.site_key is None) or (
+            C.INCLUDE_BAY_IN_ENTITY_ID and req.bay_id is None):
         _gone(kdvr, chan_no, "/score")
-    entity_id = _entity_from_path(kdvr, chan_no, req.site_key)
+    entity_id = _entity_from_path(kdvr, chan_no, req.site_key, req.bay_id)
     return _score_entity(entity_id, req, request, kdvr, chan_no)
 
 
@@ -595,12 +639,32 @@ def score_entity(kdvr: int, chan_no: int, req: EntityScoreRequest,
              response_model=ScoreResponse)
 def score_entity_site_scoped(site_key: int, kdvr: int, chan_no: int,
                              req: EntityScoreRequest, request: Request) -> ScoreResponse:
+    _check_site(req, site_key)
+    if C.INCLUDE_BAY_IN_ENTITY_ID and req.bay_id is None:
+        _gone(kdvr, chan_no, "/score")
+    entity_id = _entity_from_path(kdvr, chan_no, site_key, req.bay_id)
+    return _score_entity(entity_id, req, request, kdvr, chan_no)
+
+
+@router.post("/v1/sites/{site_key}/entities/{kdvr}/{chan_no}/bays/{bay_id}/score",
+             response_model=ScoreResponse)
+def score_entity_bay_scoped(site_key: int, kdvr: int, chan_no: int, bay_id: str,
+                            req: EntityScoreRequest,
+                            request: Request) -> ScoreResponse:
+    _check_site(req, site_key)
+    if req.bay_id is not None and str(req.bay_id) != str(bay_id):
+        raise HTTPException(status_code=422,
+                            detail=f"body bay_id {req.bay_id} does not match path "
+                                   f"{bay_id}")
+    entity_id = _entity_from_path(kdvr, chan_no, site_key, bay_id)
+    return _score_entity(entity_id, req, request, kdvr, chan_no)
+
+
+def _check_site(req: EntityScoreRequest, site_key: int) -> None:
     if req.site_key is not None and int(req.site_key) != int(site_key):
         raise HTTPException(status_code=422,
                             detail=f"body site_key {req.site_key} does not match path "
                                    f"{site_key}")
-    entity_id = _entity_from_path(kdvr, chan_no, site_key)
-    return _score_entity(entity_id, req, request, kdvr, chan_no)
 
 
 # --------------------------------------------------------------------------

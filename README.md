@@ -24,7 +24,7 @@ Three modules, each independently runnable and tested.
 Cartcounting_model_forecast/
 ├── cart_forecasting/   the audited modelling pipeline        49 tests
 ├── api/                single-entity scoring API             18 tests
-└── cart_platform/      multi-entity platform + receiver     161 tests
+└── cart_platform/      multi-entity platform + receiver     193 tests
 ```
 
 | Module | What it is | When to use it |
@@ -448,13 +448,13 @@ predictive, and counting them inflates the score.
 ```bash
 cd cart_forecasting && python -m pytest tests -q     #  49
 cd api              && python -m pytest tests -q     #  18
-cd cart_platform    && python -m pytest tests -q     # 161
+cd cart_platform    && python -m pytest tests -q     # 193
 ```
 
 The platform suite covers the registry and three-level resolution, on-demand
 upload/training/backtests, the result receiver contract and idempotency, the
 outbox with retry and dead-lettering, per-entity configuration isolation, the
-independent WARNING/CRITICAL bands, and the retired-model disk retention job.
+independent WARNING/CRITICAL bands, and the disk and database retention job.
 
 **P0 guarantee:** `block_id` is keyed by entity, so no rolling window, lag or
 target can mix two streams — verified by a dedicated unit test and by a
@@ -480,39 +480,139 @@ projections built from it. Deleting a projection directly cannot be repaired by
 re-sending, because the receiver answers a known `event_id` with `REPLAY` and
 skips the projection — rebuild it from `received_events` instead.
 
+### Starting over
+
+`scripts/reset_databases.py` empties both databases and keeps their structure.
+Destructive, so it is a dry-run until `--yes`.
+
+```bash
+cd cart_platform
+python scripts/reset_databases.py                      # show what would go
+python scripts/reset_databases.py --yes                # reset both
+python scripts/reset_databases.py --db receiver --yes  # just one
+python scripts/reset_databases.py --yes --with-artifacts
+```
+
+Structure is rebuilt by each module's own `init_db()` — its `schema.sql`
+followed by its additive migrations — so the result is exactly the schema the
+code expects rather than a copy that can drift.
+
+| Mode | Behaviour |
+|---|---|
+| `recreate` (default) | delete the file and rebuild it from `schema.sql` |
+| `truncate` | keep the file, delete every row, restart AUTOINCREMENT ids |
+
+In `recreate` mode the table and column inventory is captured first and
+compared afterwards; anything that existed before and is not recreated aborts
+the run, so structure added by hand is never dropped silently. A timestamped
+`.bak` snapshot is taken first unless `--no-backup` — it is written with
+SQLite's online backup API, so it includes the WAL that a file copy misses.
+
+The script refuses to run while another process holds a write lock: a reset
+under a live server leaves that process writing to an unlinked inode, where the
+work is invisible in the new file. Stop the servers first, or pass `--force`.
+
+`--with-artifacts` also empties `models/`, `logs/` and `data/uploads/`. Without
+it those files survive a reset registry that can no longer explain them.
+
 ---
 
-## Disk retention for retired models
+## Retention — reclaiming disk and database space
 
 A `retired` model can never be scored again — the resolver binds only a
 `champion`, and a rollback promotes a `candidate` — so its bundle, training
-logs, calibration and backtest artifacts are dead weight. A fortnightly job
-deletes them.
+logs, calibration and backtest artifacts and its dependent rows are dead
+weight. A fortnightly job deletes them, along with operational records that
+have outlived their usefulness.
 
 ```bash
 cd cart_platform
 python scripts/purge_retired_artifacts.py                 # dry-run: show the plan
 python scripts/purge_retired_artifacts.py --apply         # free the space
-python scripts/purge_retired_artifacts.py --grace-days 30 # keep artifacts longer
+python scripts/purge_retired_artifacts.py --grace-days 30 # keep things longer
+python scripts/purge_retired_artifacts.py --files-only    # artifacts, no rows
+python scripts/purge_retired_artifacts.py --keep-decisions  # leave the ledgers
 ```
 
-**Files only.** Every database row survives, so the audit trail of what was
-trained, promoted and retired is untouched: the `model_registry` row is stamped
-with `purged_at` / `purged_bytes`, and one row per deleted path is written to
-`artifact_purges`.
+Everything is gated on one age cutoff, **one week** by default.
 
-What is deleted for each model retired more than `--grace-days` ago:
+### Pass 1 — retired models
 
-| Path | Deleted when |
+| What | Deleted when |
 |---|---|
 | `models/per_entity/<entity>/<model_id>/` | always |
 | `logs/training/<job_id>/<entity>/` | no non-retired model and no unfinished job uses that job |
-| `logs/scores/.../req-*.csv` for that model | always |
 | `data/uploads/<upload_id>/` | every model trained from that upload is retired |
+| rows in `scoring_artifacts`, `calibration_records`, `calibrator_registry`, `backtest_reports`, `backtest_runs`, `config_snapshots`, `entity_model_bindings` | always |
+| rows in `training_jobs`, `dataset_uploads`, `upload_entities` | the job / upload is unshared |
+
+### Pass 2 — decisions the receiver already has
+
+`scoring_results` and `replenishment_orders` grow without bound: one row per
+record per entity, forever. Both are forwarded to the result receiver, which is
+their system of record, so once a decision is **acknowledged there** and older
+than the cutoff the local copy is redundant and goes.
+
+| What | Rule |
+|---|---|
+| `scoring_results` | `delivered_at` is set and `decision_time` older than the cutoff |
+| `replenishment_orders` | same, and the order is not `PENDING` |
+
+`delivered_at` is stamped on the decision by the outbox the moment the receiver
+acknowledges the event — the outbox row that proves delivery is itself purged
+later, so the proof is copied onto the decision. A decision whose event is
+still `pending`, `sending` or `dead_letter` has **not** reached the other
+server: it is the only copy that exists and it is kept, however old, and the
+run reports how many were held back. An open (`PENDING`) replenishment order is
+outstanding work on the floor and is never deleted either.
+
+```bash
+# how much is waiting on delivery
+sqlite3 cart_platform/data/platform.db \
+  "SELECT status, COUNT(*) FROM result_outbox GROUP BY status;"
+```
+
+If the receiver has been down, start it and let the outbox drain — the next run
+clears everything it confirms. `--force-undelivered` overrides the gate and
+destroys undelivered decisions; use it only when records reach the other server
+by some route this platform cannot see.
+
+### Pass 3 — operational logs, any model
+
+| What | Rule |
+|---|---|
+| `logs/scores/<entity>/<date>/req-*.csv` + its `scoring_artifacts` row | older than the cutoff — every column is already a `scoring_results` row |
+| `result_outbox` where `status = 'sent'` | the receiver has acknowledged it |
+| `result_outbox` where `status = 'dead_letter'` and the model is retired | cannot be retried into anything meaningful |
+| `api_requests` | HTTP traffic log |
+
+Score logs age by `decision_time` — the same moment as `created_at` in
+production, since a decision is written when it is made; the two diverge only
+for a backfill or an experiment replay, where it is still the age of the
+decision that matters.
+
+### What is never deleted
+
+* **anything belonging to a champion or candidate** — bundles, training
+  artifacts, calibration, backtests, bindings and registry rows are protected
+  by a live-model guard re-checked on every statement;
+* **the `model_registry` row** of a retired model, so the audit trail of what
+  was trained, promoted and retired survives — it is stamped with `purged_at` /
+  `purged_bytes` instead, and every deleted path is recorded in
+  `artifact_purges`;
+* **a decision the receiver has not acknowledged**, and any order attached to
+  it — that data exists nowhere else;
+* **open (`PENDING`) replenishment orders**, at any age;
+* **undelivered outbox work** — `pending` and `sending`, at any age.
 
 Nothing outside `models/`, `logs/` and `data/uploads/` can be touched: a path
 that resolves elsewhere — or to a root itself — is refused, so a stale absolute
 `artifact_path` copied from another machine cannot delete anything.
+
+`VACUUM` runs last, because SQLite keeps freed pages inside the file otherwise.
+It needs an exclusive lock: with the server running it is skipped with a
+warning and the next run reclaims the pages — the deletions themselves are
+unaffected.
 
 ### Fortnightly schedule (macOS `launchd`)
 
@@ -531,6 +631,9 @@ fire is harmless.
 sqlite3 cart_platform/data/platform.db \
   "SELECT COUNT(*), SUM(purged_bytes)/1048576 AS mb
      FROM model_registry WHERE purged_at IS NOT NULL;"
+sqlite3 cart_platform/data/platform.db \
+  "SELECT kind, COUNT(*), SUM(bytes)/1048576 AS mb
+     FROM artifact_purges GROUP BY kind;"
 ```
 
 On Linux the same command runs from cron:

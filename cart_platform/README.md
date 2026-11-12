@@ -75,7 +75,7 @@ bash receiver/run_server.sh       # http://127.0.0.1:8200/docs
 # Terminal C — health + end-to-end demo
 curl http://127.0.0.1:8100/health
 curl http://127.0.0.1:8200/health
-python scripts/make_sample_dataset.py     # 3 streams: 215:0, 215:1, 300:2
+python scripts/make_sample_dataset.py     # 3 bays: 215:0, 215:1, 300:2
 python scripts/smoke_e2e.py               # upload → train → promote → score
 ```
 
@@ -108,15 +108,22 @@ curl -X POST http://127.0.0.1:8100/v1/datasets/upload \
         "entity_defaults": {"risk_threshold": 0.55, "cooldown_min": 30,
                             "lead_time_min": 10, "max_sequence_gap_min": 15},
         "entity_overrides": {
-          "215:0": {"bay_capacity": 60, "red_threshold": 15,
+          "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {
+                    "bay_capacity": 60, "red_threshold": 15,
                     "amber_threshold": 20, "target_stock": 28},
-          "215:1": {"bay_capacity": 90, "red_threshold": 20,
+          "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0": {
+                    "bay_capacity": 90, "red_threshold": 20,
                     "amber_threshold": 28, "target_stock": 40}
         },
         "auto_start_training": false}'
 ```
 
-Returns the pairs found **in that file**, their record counts, data-quality
+The dataset must carry a `BayID` column (map any source name with
+`config.column_mapping.BayID`); bay keys are normalised, so the GUID
+`06053B44-0A47-42FC-BE3E-F88CB85F99D8` becomes
+`06053B44_0A47_42FC_BE3E_F88CB85F99D8`.
+
+Returns the bays found **in that file**, their record counts, data-quality
 report, trainability and score URL. An entity without `bay_capacity` is reported
 untrainable — physical values are never invented. Re-uploading the same file
 with the same config is idempotent (`duplicate_of` is set, nothing is retrained).
@@ -126,7 +133,7 @@ with the same config is idempotent (`duplicate_of` is set, nothing is retrained)
 ```bash
 curl -X POST http://127.0.0.1:8100/v1/training/jobs \
   -H 'Content-Type: application/json' \
-  -d '{"upload_id": "upl_20261019_f669dbc9", "entity_ids": ["163:215:0"], "strategy": "per_entity"}'
+  -d '{"upload_id": "upl_20261019_f669dbc9", "entity_ids": ["163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"], "strategy": "per_entity"}'
 
 
 
@@ -183,25 +190,27 @@ recorded alongside, not merged into, the entity configuration.
 ### 4. Promote (always manual)
 
 ```bash
-curl -X POST http://127.0.0.1:8100/v1/entities/215/0/models/mdl_163_215_0_20261015141054_160b75/promote \
+curl -X POST http://127.0.0.1:8100/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/models/mdl_163_215_0_20261015141054_160b75/promote \
   -H 'Content-Type: application/json' -d '{"promoted_by": "you"}'
 ```
 
 Gates: calibration must be `fitted`, all three backtests `completed`, and the
 model must have been trained for **this** entity. A blocked promotion returns
 409 with the reasons. `audited_exception_reason` records an explicit override.
-`POST /v1/entities/{kdvr}/{chan_no}/models/rollback` restores the prior binding.
+`POST /v1/sites/{siteKey}/entities/{kdvr}/{chan_no}/bays/{bay_id}/models/rollback`
+restores the prior binding.
 
 ### 5. Score
 
 ```bash
-curl -X POST http://127.0.0.1:8100/v1/entities/215/0/score \
+curl -X POST http://127.0.0.1:8100/v1/sites/163/entities/215/0/bays/06053B44_0A47_42FC_BE3E_F88CB85F99D8/score \
   -H 'Content-Type: application/json' \
   -d '{"records": [ ...at least 12, 20 recommended... ], "params": {}}'
 ```
 
 One parameterized route backed by the registry — not one route per entity.
-Unregistered pairs return 404; registered but unpromoted return
+A URL without the site or the bay returns **410 ROUTE_MOVED** with the correct
+URL, because neither can be inferred. Unregistered bays return 404; registered but unpromoted return
 **409 MODEL_NOT_READY**. Each new decision writes
 `logs/scores/<entity>/<date>/<request_id>.csv`; a retry returns the original
 artifact and places no second order.
@@ -289,19 +298,27 @@ curl -s localhost:8100/v1/entities/300:2 | jq '.resolved_config | {red_model, re
 - Snapshots, bundles and scoring CSVs are written atomically and made read-only.
 
 Environment: `CART_PLATFORM_HOST`, `CART_PLATFORM_PORT`, `CART_PLATFORM_DB`,
-`CART_PLATFORM_LOG_DIR`, `CART_ENTITY_INCLUDE_SITE`, `CART_MIN_HISTORY`.
+`CART_PLATFORM_LOG_DIR`, `CART_ENTITY_INCLUDE_SITE`, `CART_ENTITY_INCLUDE_BAY`,
+`CART_MIN_HISTORY`.
 
 ## Entity grain
 
 ```
-entity_id = "KDVR:ChanNo"        e.g. "215:0"
+entity_id = "siteKey:KDVR:ChanNo:BayID"
+            e.g. "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"
 ```
 
-One camera stream watching one cart bay. `siteKey` is an attribute used for
-pooling, roll-ups and store-level parameters — never the stream identity.
+One camera stream watching one cart bay.
 
-Set `CART_ENTITY_INCLUDE_SITE=1` if DVR ids restart per store; the key becomes
-`"163:215:0"` (decision D9b — **confirm before production**).
+- `CART_ENTITY_INCLUDE_SITE=1` (default): DVR ids restart per store, so the
+  site is part of the key, not an attribute of it (decision D9b).
+- `CART_ENTITY_INCLUDE_BAY=1` (default): a channel can watch more than one
+  bay, so the bay is part of the key (decision D9c). The dataset must carry
+  `BayID`, and entity routes become
+  `/v1/sites/{siteKey}/entities/{KDVR}/{ChanNo}/bays/{BayID}/...`.
+
+Set either to `0` for a deployment where that part is not needed; ids and URLs
+then drop the corresponding segment.
 
 **P0 guarantee:** `block_id` is keyed by entity, so no rolling window, lag or
 target can mix two streams. Verified two ways: a dedicated unit test, and a

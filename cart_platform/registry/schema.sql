@@ -1,6 +1,8 @@
 -- Cart Forecasting Platform — registry, operational and log tables.
--- Grain: entity = one camera stream = (KDVR, ChanNo), optionally prefixed by
--- siteKey when DVR ids are only unique within a store (decision D9b).
+-- Grain: entity = one camera stream watching one cart bay = (KDVR, ChanNo),
+-- optionally prefixed by siteKey when DVR ids are only unique within a store
+-- (decision D9b) and suffixed by the bay id when a channel watches more than
+-- one bay (decision D9c): "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8".
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -21,10 +23,11 @@ CREATE TABLE IF NOT EXISTS site_config (
 );
 
 CREATE TABLE IF NOT EXISTS entity_config (
-    entity_id             TEXT PRIMARY KEY,   -- "215:0" or "163:215:0"
+    entity_id             TEXT PRIMARY KEY,   -- "215:0", "163:215:0" or "163:215:0:<bay>"
     kdvr                  INTEGER NOT NULL,
     chan_no               INTEGER NOT NULL,
     site_key              INTEGER NOT NULL,
+    bay_id                TEXT,               -- physical bay watched by this stream
     area_id               INTEGER,
     display_name          TEXT,
     status                TEXT NOT NULL DEFAULT 'shadow',  -- active|shadow|disabled
@@ -61,7 +64,6 @@ CREATE TABLE IF NOT EXISTS entity_config (
     n_days_history        INTEGER DEFAULT 0,
     updated_at            TEXT,
     updated_by            TEXT,
-    UNIQUE (kdvr, chan_no, site_key),
     FOREIGN KEY (site_key) REFERENCES site_config(site_key)
 );
 
@@ -120,6 +122,7 @@ CREATE TABLE IF NOT EXISTS scoring_results (
     kdvr                    INTEGER,
     chan_no                 INTEGER,
     site_key                INTEGER,
+    bay_id                  TEXT,
     decision_time           TEXT NOT NULL,
     current_cart            REAL,
     simulated_cart          REAL,
@@ -134,6 +137,9 @@ CREATE TABLE IF NOT EXISTS scoring_results (
     model_id                TEXT,
     calibration_id          TEXT,
     scored_at               TEXT,
+    -- Set by the outbox once the receiver has acknowledged this decision.
+    -- Retention never deletes a decision that is not stamped here.
+    delivered_at            TEXT,
     UNIQUE (entity_id, decision_time)      -- idempotency enforced by the DB
 );
 
@@ -147,6 +153,7 @@ CREATE TABLE IF NOT EXISTS replenishment_orders (
     kdvr                     INTEGER,
     chan_no                  INTEGER,
     site_key                 INTEGER,
+    bay_id                   TEXT,
     decision_time            TEXT NOT NULL,
     quantity                 INTEGER NOT NULL,
     expected_completion_time TEXT NOT NULL,
@@ -284,6 +291,7 @@ CREATE TABLE IF NOT EXISTS upload_entities (
     kdvr                INTEGER NOT NULL,
     chan_no             INTEGER NOT NULL,
     site_key            INTEGER,
+    bay_id              TEXT,
     n_records           INTEGER,
     n_usable            INTEGER,
     n_days              INTEGER,

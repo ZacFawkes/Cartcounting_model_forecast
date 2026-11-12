@@ -32,14 +32,16 @@ CONFIG = {
     "entity_defaults": {"max_sequence_gap_min": 15,
                         "cooldown_min": 30, "lead_time_min": 10},
     "entity_overrides": {
-        "163:215:0": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
+        "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8": {"bay_capacity": 60, "red_threshold": 15, "amber_threshold": 20,
                   "target_stock": 28},
-        "163:215:1": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
+        "163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0": {"bay_capacity": 90, "red_threshold": 20, "amber_threshold": 28,
                   "target_stock": 40},
     },
     "auto_start_training": False,
 }
-TARGET = "163:215:0"
+BAY = "06053B44_0A47_42FC_BE3E_F88CB85F99D8"
+TARGET = f"163:215:0:{BAY}"
+TARGET_URL = f"/v1/sites/163/entities/215/0/bays/{BAY}"
 BAR = "=" * 78
 
 
@@ -76,7 +78,7 @@ def main() -> int:
     up = r.json()
     print("upload_id:", up["upload_id"], "| entities found:", up["n_entities"])
     for e in up["entities"]:
-        print(f"  {e['entity_id']:8s} rows={e['records']:5d} days={e['days']:3d} "
+        print(f"  {e['entity_id']:46s} rows={e['records']:5d} days={e['days']:3d} "
               f"trainable={e['trainable']!s:5s} url={e['score_url']}")
         for reason in e["blocking_reasons"]:
             print(f"      blocked: {reason}")
@@ -87,7 +89,7 @@ def main() -> int:
     recs = [{"DVRDate": x.DVRDate.isoformat(), "next_DVRDate": x.next_DVRDate.isoformat(),
              "Count": float(x.Count), "Count_IN": float(x.Count_IN),
              "Count_OUT": float(x.Count_OUT)} for x in sub.tail(60).head(20).itertuples()]
-    pre = requests.post(f"{a.ml}/v1/sites/163/entities/215/0/score", headers=H,
+    pre = requests.post(f"{a.ml}{TARGET_URL}/score", headers=H,
                         json={"records": recs}, timeout=60)
     print("status:", pre.status_code, "->",
           (pre.json().get("detail") or {}).get("code", pre.text[:120]))
@@ -129,16 +131,19 @@ def main() -> int:
         print(f"      {rep.get('metrics_summary')}")
 
     step(7, "manual promotion (never automatic)")
-    pr = requests.post(f"{a.ml}/v1/sites/163/entities/215/0/models/{model_id}/promote",
+    pr = requests.post(f"{a.ml}{TARGET_URL}/models/{model_id}/promote",
                        headers=H, json={"promoted_by": "smoke"}, timeout=60)
     print("status:", pr.status_code, "->", pr.json().get("model_status"))
-    for other in ("215/1", "300/2"):
-        rr = requests.get(f"{a.ml}/v1/entities/{other}/model", headers=H,
-                          timeout=30).json()
+    for other in ("163:215:1:1B1C2D3E_4F50_6172_8394_A5B6C7D8E9F0",
+                  "177:300:2:2C2D3E4F_5061_7283_94A5_B6C7D8E9F001"):
+        site, kdvr, chan, bay = other.split(":")
+        rr = requests.get(
+            f"{a.ml}/v1/sites/{site}/entities/{kdvr}/{chan}/bays/{bay}/model",
+            headers=H, timeout=30).json()
         print(f"  {other} untouched: {rr['model_status']}")
 
     step(8, "score via the entity-specific URL")
-    sc = requests.post(f"{a.ml}/v1/sites/163/entities/215/0/score", headers=H,
+    sc = requests.post(f"{a.ml}{TARGET_URL}/score", headers=H,
                        json={"records": recs}, timeout=120)
     sc.raise_for_status()
     b = sc.json()
@@ -155,7 +160,7 @@ def main() -> int:
         print("  warning:", w)
 
     step(9, "idempotent retry reuses the artifact")
-    again = requests.post(f"{a.ml}/v1/sites/163/entities/215/0/score", headers=H,
+    again = requests.post(f"{a.ml}{TARGET_URL}/score", headers=H,
                           json={"records": recs}, timeout=120).json()
     print("replay:", again["idempotent_replay"],
           "| same artifact:", again["artifact_path"] == b["artifact_path"])

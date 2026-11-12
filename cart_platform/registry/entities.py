@@ -8,10 +8,12 @@ import pandas as pd
 
 from settings import (
     BAY_CAPACITY_MARGIN,
+    INCLUDE_BAY_IN_ENTITY_ID,
     INCLUDE_SITE_IN_ENTITY_ID,
     MIN_DAYS_FOR_ACTIVE,
     THRESHOLD_PERCENTILES,
 )
+from data_loader import BAY_COL, normalize_bay_id
 from registry.database import execute, query, query_df, query_one, upsert, utc_now
 
 LOGGER = logging.getLogger("platform.registry")
@@ -21,6 +23,11 @@ ACTIVE, SHADOW, DISABLED = "active", "shadow", "disabled"
 
 class UnknownEntity(KeyError):
     """Raised instead of silently scoring with default thresholds."""
+
+
+def entity_display_name(site_key: int, kdvr: int, chan_no: int, bay_id=None) -> str:
+    name = f"Site {site_key} / DVR {kdvr} ch{chan_no}"
+    return f"{name} / bay {bay_id}" if bay_id else name
 
 
 # --------------------------------------------------------------------------
@@ -144,7 +151,7 @@ def derive_thresholds(counts: pd.Series) -> dict:
 # Bootstrap from telemetry
 # --------------------------------------------------------------------------
 def discover_entities(prepared: pd.DataFrame) -> pd.DataFrame:
-    """Summarise every (KDVR, ChanNo) stream present in a prepared frame."""
+    """Summarise every (KDVR, ChanNo[, bay]) stream present in a prepared frame."""
     g = prepared.groupby("entity_id", observed=True)
     out = pd.DataFrame(
         {
@@ -161,6 +168,12 @@ def discover_entities(prepared: pd.DataFrame) -> pd.DataFrame:
             "cart_median": g["Count"].median(),
         }
     ).reset_index()
+    if BAY_COL in prepared.columns:
+        out["bay_id"] = out["entity_id"].map(
+            g[BAY_COL].first().map(normalize_bay_id).to_dict()
+        )
+    else:
+        out["bay_id"] = None
     return out
 
 
@@ -188,8 +201,10 @@ def register_from_telemetry(
             "kdvr": int(r["kdvr"]),
             "chan_no": int(r["chan_no"]),
             "site_key": site_key,
+            "bay_id": r.get("bay_id"),
             "area_id": int(r["area_id"]),
-            "display_name": f"Site {site_key} / DVR {int(r['kdvr'])} ch{int(r['chan_no'])}",
+            "display_name": entity_display_name(site_key, int(r["kdvr"]), int(r["chan_no"]),
+                                          r.get("bay_id")),
             "n_days_history": int(r["n_days"]),
         }
         needs_thresholds = (
@@ -221,7 +236,7 @@ def register_from_telemetry(
 def entity_summary() -> pd.DataFrame:
     return query_df(
         """
-        SELECT e.entity_id, e.site_key, e.kdvr, e.chan_no, e.status,
+        SELECT e.entity_id, e.site_key, e.kdvr, e.chan_no, e.bay_id, e.status,
                e.red_threshold, e.amber_threshold, e.target_stock, e.bay_capacity,
                e.threshold_source, e.n_days_history, e.model_id, e.calibration_id,
                s.lead_time_min AS site_lead_time_min, s.reserve_per_day AS site_reserve
@@ -232,9 +247,63 @@ def entity_summary() -> pd.DataFrame:
     )
 
 
-def entity_id_for(kdvr: int, chan_no: int, site_key: int | None = None) -> str:
+def entity_id_for(
+    kdvr: int,
+    chan_no: int,
+    site_key: int | None = None,
+    bay_id: str | None = None,
+) -> str:
+    parts = [str(int(kdvr)), str(int(chan_no))]
     if INCLUDE_SITE_IN_ENTITY_ID:
         if site_key is None:
             raise ValueError("site_key is required when entity ids include the site")
-        return f"{int(site_key)}:{int(kdvr)}:{int(chan_no)}"
-    return f"{int(kdvr)}:{int(chan_no)}"
+        parts.insert(0, str(int(site_key)))
+    if INCLUDE_BAY_IN_ENTITY_ID and bay_id is not None and str(bay_id).strip():
+        # A dataset that predates bay identity produces bay-less ids; they stay
+        # addressable instead of becoming unreachable.
+        parts.append(normalize_bay_id(bay_id))
+    return ":".join(parts)
+
+
+def entity_ids_for_channel(site_key, kdvr: int, chan_no: int) -> list[str]:
+    """Registered entities watching one channel — one per bay."""
+    sql = "SELECT entity_id FROM entity_config WHERE kdvr=? AND chan_no=?"
+    params: list = [int(kdvr), int(chan_no)]
+    if site_key is not None:
+        sql += " AND site_key=?"
+        params.append(int(site_key))
+    return [r["entity_id"] for r in query(sql + " ORDER BY entity_id", tuple(params))]
+
+
+def split_entity_id(entity_id: str) -> dict:
+    """Decompose an entity id into its parts, whatever the configured shape.
+
+    Returns ``{site_key, kdvr, chan_no, bay_id}`` with ``None`` for parts the
+    id does not carry. ``kdvr``/``chan_no`` are always the numeric pair, so a
+    consumer never has to know how the platform is configured.
+    """
+    parts = str(entity_id).split(":")
+    site_key = kdvr = chan_no = bay_id = None
+    numeric = [i for i, p in enumerate(parts) if p.lstrip("-").isdigit()]
+    if len(parts) >= 4:
+        site_key, kdvr, chan_no, bay_id = parts[0], parts[1], parts[2], ":".join(parts[3:])
+    elif len(parts) == 3:
+        # "site:kdvr:chan" or "kdvr:chan:bay"
+        if len(numeric) == 3:
+            site_key, kdvr, chan_no = parts
+        else:
+            kdvr, chan_no, bay_id = parts
+    elif len(parts) == 2:
+        kdvr, chan_no = parts
+    else:
+        return {"site_key": None, "kdvr": None, "chan_no": None, "bay_id": None}
+    try:
+        kdvr, chan_no = int(kdvr), int(chan_no)
+    except (TypeError, ValueError):
+        return {"site_key": None, "kdvr": None, "chan_no": None, "bay_id": bay_id}
+    return {
+        "site_key": int(site_key) if site_key is not None else None,
+        "kdvr": kdvr,
+        "chan_no": chan_no,
+        "bay_id": bay_id,
+    }

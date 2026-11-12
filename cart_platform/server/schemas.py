@@ -47,10 +47,14 @@ class ParameterOverrides(BaseModel):
 # Scoring
 # --------------------------------------------------------------------------
 class ScoreRequest(BaseModel):
-    entity_id: str | None = Field(None, description='"KDVR:ChanNo", e.g. "215:0"')
+    entity_id: str | None = Field(
+        None,
+        description='Full entity id, e.g. "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8" '
+                    '(siteKey:KDVR:ChanNo:bay_id).')
     kdvr: int | None = None
     chan_no: int | None = None
     site_key: int | None = None
+    bay_id: str | None = None
     records: list[TelemetryRecord] = Field(
         ...,
         description="Consecutive, chronological; last = newest COMPLETED record. "
@@ -96,6 +100,7 @@ class ScoreResponse(BaseModel):
     kdvr: int
     chan_no: int
     site_key: int
+    bay_id: str | None = None
     entity_status: str
     decision_time: str
     current_cart: float
@@ -169,6 +174,7 @@ class EntityUpsert(BaseModel):
     kdvr: int | None = None
     chan_no: int | None = None
     site_key: int | None = None
+    bay_id: str | None = None
     area_id: int | None = None
     display_name: str | None = None
     status: Literal["active", "shadow", "disabled"] | None = None

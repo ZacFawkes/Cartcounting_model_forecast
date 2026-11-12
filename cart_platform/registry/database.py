@@ -36,6 +36,26 @@ def connect(path: Path | str = None) -> sqlite3.Connection:
     return conn
 
 
+def reset_connection(path: Path | str = None) -> None:
+    """Drop cached handles so the next ``connect`` reopens the file.
+
+    A handle survives ``unlink``: SQLite keeps writing to the unlinked inode
+    and the work is invisible in the new file. Anything that replaces the
+    database on disk has to clear the cache first.
+    """
+    keys = ([f"conn::{Path(path)}"] if path
+            else [a for a in vars(_LOCAL) if a.startswith("conn::")])
+    for key in keys:
+        conn = getattr(_LOCAL, key, None)
+        if conn is None:
+            continue
+        try:
+            conn.close()
+        except sqlite3.Error:     # pragma: no cover — already broken handle
+            pass
+        delattr(_LOCAL, key)
+
+
 def init_db(path: Path | str = None) -> None:
     conn = connect(path)
     conn.executescript(SCHEMA_FILE.read_text(encoding="utf-8"))

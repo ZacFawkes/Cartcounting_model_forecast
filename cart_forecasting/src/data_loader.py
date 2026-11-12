@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,10 @@ from config import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+# Physical bay watched by a camera stream. Optional in the pipeline's own
+# datasets; required when entity identity includes the bay (see entity_id).
+BAY_COL = "BayID"
 
 REQUIRED_COLUMNS = [
     "CountID",
@@ -70,7 +75,32 @@ def load_raw(path: Path | str = RAW_DATA_FILE) -> pd.DataFrame:
     return df
 
 
-def entity_id(df: pd.DataFrame, include_site: bool = False) -> pd.Series:
+def normalize_bay_id(value) -> str:
+    """Canonical form of a bay identifier.
+
+    ``:`` separates the parts of an entity id and the id travels through URL
+    paths, so every character outside ``[A-Za-z0-9_]`` collapses to ``_``.
+    A GUID ``06053B44-0A47-42FC-BE3E-F88CB85F99D8`` therefore becomes
+    ``06053B44_0A47_42FC_BE3E_F88CB85F99D8``.
+    """
+    text = str(value).strip()
+    if not text or text.lower() in ("nan", "none", "null"):
+        raise ValueError("bay id is empty")
+    return re.sub(r"[^0-9A-Za-z_]", "_", text)
+
+
+def normalize_bay_series(values: pd.Series) -> pd.Series:
+    cleaned = values.astype(str).str.strip()
+    # object dtype, never a pandas extension string dtype: the column travels
+    # into feature engineering, which selects columns by numeric dtype.
+    return cleaned.str.replace(r"[^0-9A-Za-z_]", "_", regex=True).astype(object)
+
+
+def entity_id(
+    df: pd.DataFrame,
+    include_site: bool = False,
+    include_bay: bool = False,
+) -> pd.Series:
     """Modelling grain: one camera stream watching one cart bay.
 
     ``KDVR`` identifies the DVR device and ``ChanNo`` the channel on it, so the
@@ -79,17 +109,35 @@ def entity_id(df: pd.DataFrame, include_site: bool = False) -> pd.Series:
     never as the stream identity.
 
     Set ``include_site`` when DVR ids are only unique within a store, producing
-    a three-part key ``site:kdvr:chan``.
+    a three-part key ``site:kdvr:chan``. Set ``include_bay`` when one channel
+    can watch more than one physical bay, producing the four-part key
+    ``site:kdvr:chan:bay``.
     """
     kdvr = df["KDVR"].astype("int64").astype(str)
     chan = df["ChanNo"].astype("int64").astype(str)
+    parts = [kdvr, chan]
     if include_site:
-        site = df["siteKey"].astype("int64").astype(str)
-        return site + ":" + kdvr + ":" + chan
-    return kdvr + ":" + chan
+        parts.insert(0, df["siteKey"].astype("int64").astype(str))
+    if include_bay:
+        if BAY_COL not in df.columns:
+            raise ValueError(
+                f"column '{BAY_COL}' is required when the entity id includes the bay"
+            )
+        bay = normalize_bay_series(df[BAY_COL])
+        if (bay == "").any() or bay.isna().any():
+            raise ValueError(f"column '{BAY_COL}' contains empty bay identifiers")
+        parts.append(bay)
+    out = parts[0]
+    for part in parts[1:]:
+        out = out + ":" + part
+    return out
 
 
-def prepare(df: pd.DataFrame, include_site_in_entity: bool = False) -> pd.DataFrame:
+def prepare(
+    df: pd.DataFrame,
+    include_site_in_entity: bool = False,
+    include_bay_in_entity: bool = False,
+) -> pd.DataFrame:
     """Sort per entity, drop unusable rows and derive interval metadata.
 
     ``next_DVRDate`` is the earliest timestamp at which the traffic accumulated
@@ -107,7 +155,9 @@ def prepare(df: pd.DataFrame, include_site_in_entity: bool = False) -> pd.DataFr
     n0 = len(out)
 
     out = out.dropna(subset=[TIME_COL, NEXT_TIME_COL, CART_COL])
-    out["entity_id"] = entity_id(out, include_site_in_entity)
+    if BAY_COL in out.columns:
+        out[BAY_COL] = normalize_bay_series(out[BAY_COL])
+    out["entity_id"] = entity_id(out, include_site_in_entity, include_bay_in_entity)
     out = out.drop_duplicates(subset=["entity_id", TIME_COL], keep="first")
     out = out.sort_values(["entity_id", TIME_COL], kind="mergesort").reset_index(drop=True)
     n_entities = out["entity_id"].nunique()

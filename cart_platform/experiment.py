@@ -129,10 +129,21 @@ def train(base: str, upload_id: str, entity: str, timeout_s: int) -> dict:
     return res
 
 
+def _entity_path(base: str, entity: str) -> str:
+    """URL prefix addressing one bay: siteKey:KDVR:ChanNo[:BayID]."""
+    values = entity.split(":")
+    if len(values) == 4:
+        site, kdvr, chan, bay = values
+        return f"{base}/v1/sites/{site}/entities/{kdvr}/{chan}/bays/{bay}"
+    if len(values) == 3:
+        site, kdvr, chan = values
+        return f"{base}/v1/sites/{site}/entities/{kdvr}/{chan}"
+    raise SystemExit('Entity must use "siteKey:KDVR:ChanNo:BayID"')
+
+
 def promote(base: str, entity: str, model_id: str) -> None:
-    kdvr, chan = entity.split(":")[-2:]
     r = requests.post(
-        f"{base}/v1/entities/{kdvr}/{chan}/models/{model_id}/promote",
+        f"{_entity_path(base, entity)}/models/{model_id}/promote",
         json={"promoted_by": "run_experiment"}, timeout=120)
     if r.status_code >= 400:
         raise SystemExit(f"promotion blocked: {r.text[:500]}")
@@ -171,8 +182,7 @@ def score_all(base: str, entity: str, data: Path, window: int, params: dict) -> 
     df = df[df.entity_id == entity].reset_index(drop=True)
     if len(df) <= window:
         raise SystemExit(f"need more than {window} records, got {len(df)}")
-    kdvr, chan = entity.split(":")[-2:]
-    url = f"{base}/v1/entities/{kdvr}/{chan}/score"
+    url = f"{_entity_path(base, entity)}/score"
 
     # The window ENDS at i, so the first scoreable decision is at i = window-1.
     s, n, t0 = requests.Session(), 0, time.perf_counter()
