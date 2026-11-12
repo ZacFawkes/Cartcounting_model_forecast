@@ -1,5 +1,5 @@
 x-app: &app
-  image: ${CART_IMAGE:-git.i3ard.com:5050/thinh.thai/cartcounting_model_forecast/cart-platform}:${CART_TAG:-latest}
+  image: ${CART_IMAGE:-git.i3ard.com:5050/thinh.thai/cartcounting_model_forecast/cart-platform}:${CART_TAG:?set CART_TAG to the CI build number}
   pull_policy: always
   restart: always
   logging:
