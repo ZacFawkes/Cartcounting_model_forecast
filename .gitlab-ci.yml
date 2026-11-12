@@ -1,0 +1,56 @@
+stages:
+  - build
+
+variables:
+  IMAGE: $CI_REGISTRY_IMAGE/cart-platform
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: "1"
+  DOCKER_CERT_PATH: "/certs/client"
+  DOCKER_BUILDKIT: "1"
+
+.docker:
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      alias: docker
+  before_script:
+    - until docker info >/dev/null 2>&1; do sleep 1; done
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+
+build-push:
+  extends: .docker
+  stage: build
+  rules:
+    - if: $CI_COMMIT_TAG
+      variables:
+        EXTRA_TAG: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      variables:
+        EXTRA_TAG: latest
+    - if: $CI_PIPELINE_SOURCE == "web"
+      variables:
+        EXTRA_TAG: $CI_COMMIT_REF_SLUG
+  script:
+    - echo "Registry   $CI_REGISTRY"
+    - echo "Image      $IMAGE"
+    - echo "Will push  $IMAGE:$CI_COMMIT_SHORT_SHA"
+    - echo "Will push  $IMAGE:$EXTRA_TAG"
+    - docker pull "$IMAGE:latest" || true
+    - >
+      docker build
+      --file cart_platform/Dockerfile
+      --cache-from "$IMAGE:latest"
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --label org.opencontainers.image.revision=$CI_COMMIT_SHA
+      --label org.opencontainers.image.source=$CI_PROJECT_URL
+      --tag "$IMAGE:$CI_COMMIT_SHORT_SHA"
+      --tag "$IMAGE:$EXTRA_TAG"
+      .
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$IMAGE:$EXTRA_TAG"
+    - echo "Pushed     $IMAGE:$CI_COMMIT_SHORT_SHA"
+    - echo "Pushed     $IMAGE:$EXTRA_TAG"
+    - echo "Digest     $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:$CI_COMMIT_SHORT_SHA")"
+    - echo "Pull with  docker pull $IMAGE:$EXTRA_TAG"
+    - echo "Registry UI $CI_PROJECT_URL/container_registry"

@@ -1,0 +1,71 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${NGINX_ML_PORT:-8100}:8100"
+      - "${NGINX_RECEIVER_PORT:-8200}:8200"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      ml-server:
+        condition: service_healthy
+      receiver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: {cpus: "0.25", memory: 64M}
+    restart: unless-stopped
+
+  ml-server:
+    build:
+      context: ..
+      dockerfile: cart_platform/Dockerfile
+    image: cart-platform:latest
+    command: ["sh", "-c", "exec uvicorn server.app:app --host \"$$CART_PLATFORM_HOST\" --port \"$$CART_PLATFORM_PORT\" --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75"]
+    expose:
+      - "8100"
+    environment:
+      CART_RESULT_RECEIVER_URL: http://receiver:8200
+      CART_RESULT_RECEIVER_ENABLED: "1"
+      CART_PLATFORM_API_TOKEN: ${CART_PLATFORM_API_TOKEN:?set CART_PLATFORM_API_TOKEN}
+      CART_RESULT_RECEIVER_TOKEN: ${CART_RESULT_RECEIVER_TOKEN:?set CART_RESULT_RECEIVER_TOKEN}
+    volumes:
+      - platform-data:/app/cart_platform/data
+      - platform-logs:/app/cart_platform/logs
+      - platform-models:/app/cart_platform/models
+    depends_on:
+      - receiver
+    deploy:
+      resources:
+        limits: {cpus: "2", memory: 1G}
+        reservations: {memory: 256M}
+    restart: unless-stopped
+
+  receiver:
+    image: cart-platform:latest
+    build:
+      context: ..
+      dockerfile: cart_platform/Dockerfile
+    command: ["sh", "-c", "exec uvicorn receiver.app:app --host \"$$CART_RECEIVER_HOST\" --port \"$$CART_RECEIVER_PORT\" --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75"]
+    expose:
+      - "8200"
+    environment:
+      HEALTH_PORT: "8200"
+      CART_RESULT_RECEIVER_TOKEN: ${CART_RESULT_RECEIVER_TOKEN:?set CART_RESULT_RECEIVER_TOKEN}
+    volumes:
+      - receiver-data:/app/cart_platform/data
+    deploy:
+      resources:
+        limits: {cpus: "0.5", memory: 256M}
+    restart: unless-stopped
+
+volumes:
+  platform-data:
+  platform-logs:
+  platform-models:
+  receiver-data:
