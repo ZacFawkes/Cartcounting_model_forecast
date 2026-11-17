@@ -138,8 +138,16 @@ class PlatformClient:
 # --------------------------------------------------------------------------
 # Telemetry helpers
 # --------------------------------------------------------------------------
-def load_telemetry(path: Path = DATA_FILE) -> pd.DataFrame:
-    df = pd.read_csv(path, sep="\t", encoding="utf-8-sig")
+def load_telemetry(path: Path = DATA_FILE,
+                   bay_column: str | None = None) -> pd.DataFrame:
+    """Read an export and rebuild the platform's entity ids locally.
+
+    ``bay_column`` mirrors ``config.column_mapping.BayID`` on upload, so the
+    ids computed here match the ones the platform registered.
+    """
+    # Separator sniffed, not assumed: the same export is handed out as TSV and
+    # as CSV, and a wrong guess yields one unusable column.
+    df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
     df.columns = [c.strip().lstrip("\ufeff") for c in df.columns]
     df["DVRDate"] = pd.to_datetime(df["DVRDate"])
     df["next_DVRDate"] = pd.to_datetime(df["next_DVRDate"])
@@ -147,6 +155,9 @@ def load_telemetry(path: Path = DATA_FILE) -> pd.DataFrame:
     # deployment is single-site or has one bay per channel.
     from data_loader import BAY_COL, normalize_bay_series
     from settings import INCLUDE_BAY_IN_ENTITY_ID, INCLUDE_SITE_IN_ENTITY_ID
+
+    if bay_column and bay_column in df.columns and bay_column != BAY_COL:
+        df = df.rename(columns={bay_column: BAY_COL})
 
     parts = [df["KDVR"].astype(str), df["ChanNo"].astype(str)]
     if INCLUDE_SITE_IN_ENTITY_ID and "siteKey" in df.columns:

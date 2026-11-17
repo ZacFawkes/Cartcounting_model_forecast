@@ -2,6 +2,21 @@
 One parameterised experiment:
 Upload -> Train -> Validate Config -> Promote -> Score -> CSV.
 
+The entity grain is one camera stream watching one bay:
+``entity_id = "siteKey:KDVR:ChanNo:BayID"``. Supply it whole, or give the
+three-part id plus ``--bay-id``::
+
+    python scripts/run_experiment.py \
+        --entity 163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8 \
+        --data ../cart_forecasting/data/Thinh_bay.csv
+
+    python scripts/run_experiment.py \
+        --entity 163:215:0 \
+        --bay-id 06053B44-0A47-42FC-BE3E-F88CB85F99D8
+
+The dataset must carry a ``BayID`` column; use ``--bay-column`` when the
+export names it differently.
+
 Includes strict configuration debugging for:
 - max_carts_per_trip
 - reserve_per_day
@@ -46,9 +61,13 @@ import requests
 
 import settings as C
 from client.platform_client import load_telemetry, to_records
+from data_loader import BAY_COL, normalize_bay_id
 
 
-DEFAULT_DATA = PLATFORM_ROOT / "data" / "real_data.csv"
+# Bay identity is part of the entity id, so the default dataset is one that
+# carries a bay column.
+DEFAULT_DATA = C.PIPELINE_ROOT / "data" / "Thinh_bay.csv"
+DEFAULT_ENTITY = "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"
 HISTORY_WINDOW = 20
 
 
@@ -150,6 +169,85 @@ def parts(entity_id: str) -> tuple[str, str, str, str]:
         )
 
     return tuple(values)
+
+
+def resolve_entity(entity: str, bay_id: str | None) -> str:
+    """Canonical entity id for this platform.
+
+    Accepts ``--entity siteKey:KDVR:ChanNo:BayID`` or the three-part form plus
+    ``--bay-id``. The bay key is normalised exactly as the platform does, so
+    the id in the request matches the id the registry stores.
+    """
+    site, kdvr, chan, bay = parts(entity)
+
+    if bay_id:
+        bay_id = normalize_bay_id(bay_id)
+
+        if bay and bay != bay_id:
+            raise SystemExit(
+                f"--bay-id {bay_id} conflicts with the bay in "
+                f"--entity ({bay})"
+            )
+
+        bay = bay_id
+
+    elif bay:
+        bay = normalize_bay_id(bay)
+
+    if C.INCLUDE_BAY_IN_ENTITY_ID and not bay:
+        raise SystemExit(
+            "This platform scopes entities by bay "
+            "(CART_ENTITY_INCLUDE_BAY=1). Pass --bay-id, or use "
+            '--entity "siteKey:KDVR:ChanNo:BayID".'
+        )
+
+    if bay and not C.INCLUDE_BAY_IN_ENTITY_ID:
+        raise SystemExit(
+            "This platform does not scope entities by bay "
+            "(CART_ENTITY_INCLUDE_BAY=0); drop the bay segment."
+        )
+
+    return ":".join(
+        part
+        for part in (site, kdvr, chan, bay)
+        if part
+    )
+
+
+def verify_dataset(
+    data: Path,
+    entity: str,
+    bay_column: str | None = None,
+) -> None:
+    """Fail before uploading when the CSV cannot produce this entity."""
+    header = pd.read_csv(
+        data,
+        sep=None,
+        engine="python",
+        nrows=0,
+        encoding="utf-8-sig",
+    ).columns
+
+    header = [str(c).strip().lstrip("\ufeff") for c in header]
+    bay_source = bay_column or BAY_COL
+
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_source not in header:
+        raise SystemExit(
+            f"{data.name} has no '{bay_source}' column, so no bay-scoped "
+            f"entity can be built from it. Columns: {header}"
+        )
+
+    found = set(
+        load_telemetry(data, bay_column)["entity_id"]
+        .dropna()
+        .astype(str)
+    )
+
+    if entity not in found:
+        raise SystemExit(
+            f"Entity {entity} is not present in {data.name}. "
+            f"Found: {sorted(found)}"
+        )
 
 
 def entity_path(base: str, entity: str) -> str:
@@ -418,6 +516,11 @@ def upload(
         },
         "auto_start_training": False,
     }
+
+    if a.bay_column:
+        cfg["column_mapping"] = {
+            BAY_COL: a.bay_column
+        }
 
     log("UPLOAD CONFIGURATION")
     pretty(cfg)
@@ -803,9 +906,10 @@ def score_all(
     params: dict,
     debugger: ConfigDebugger,
     expected_model_id: str | None = None,
+    bay_column: str | None = None,
 ) -> dict:
 
-    df = load_telemetry(data)
+    df = load_telemetry(data, bay_column)
 
     df = df[
         df.entity_id == entity
@@ -1148,12 +1252,28 @@ def main() -> None:
 
     p.add_argument(
         "--base-url",
-        default="http://192.168.23.222:8100",
+        default="http://127.0.0.1:8100",
     )
 
     p.add_argument(
         "--entity",
-        default="163:215:0",
+        default=DEFAULT_ENTITY,
+        help='Entity id "siteKey:KDVR:ChanNo:BayID". The three-part form is '
+             "accepted together with --bay-id.",
+    )
+
+    p.add_argument(
+        "--bay-id",
+        default=None,
+        help="Bay identifier, when --entity omits it. Normalised the same way "
+             "as the platform does (a GUID's dashes become underscores).",
+    )
+
+    p.add_argument(
+        "--bay-column",
+        default=None,
+        help=f"Source column holding the bay id when it is not named "
+             f"'{BAY_COL}'. Sent as config.column_mapping.{BAY_COL}.",
     )
 
     p.add_argument(
@@ -1215,19 +1335,19 @@ def main() -> None:
     g.add_argument(
         "--red-threshold",
         type=int,
-        default=15,
+        default=2,
     )
 
     g.add_argument(
         "--amber-threshold",
         type=int,
-        default=20,
+        default=17,
     )
 
     g.add_argument(
         "--target-stock",
         type=int,
-        default=28,
+        default=22,
     )
 
     g.add_argument(
@@ -1293,12 +1413,14 @@ def main() -> None:
 
     a = p.parse_args()
 
-    parts(a.entity)
+    a.entity = resolve_entity(a.entity, a.bay_id)
 
     if not a.data.exists():
         raise SystemExit(
             f"Dataset not found: {a.data}"
         )
+
+    verify_dataset(a.data, a.entity, a.bay_column)
 
     if not (
         0 <= a.red_threshold
@@ -1427,6 +1549,7 @@ def main() -> None:
             if not a.skip_training
             else None
         ),
+        bay_column=a.bay_column,
     )
 
     frame = export(
@@ -1447,6 +1570,7 @@ def main() -> None:
 
         "experiment_name": a.name,
         "entity_id": a.entity,
+        "bay_id": parts(a.entity)[3] or None,
         "dataset": str(a.data),
         "upload_id": upload_id,
         "training_job_id": job_id,

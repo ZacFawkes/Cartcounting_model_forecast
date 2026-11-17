@@ -314,18 +314,11 @@ class Engine:
             session.last_record_time = ts
             session.n_calls += 1
 
+        # Reported only; decisions use the camera count and model-only forecast
+        # because the surplus is carts *assumed* delivered without confirmation.
         current_sim = observed_inventory(baseline, session.surplus, inventory)
 
-        # Project the surviving surplus over the planning horizon using recent
-        # traffic only, then forecast on the surplus-adjusted state.
-        recent_in = float(feats["Count_IN"].tail(3).mean())
-        projected = session.surplus
-        for _ in range(policy.planning_horizon):
-            projected, _c = consume_surplus(projected, baseline, recent_in, duration, inventory)
-
         pred = bundle.predict_row(X)
-        for k in ("pred_min_6", "pred_min_3", "pred_cart_3", "pred_cart_6"):
-            pred[k] += projected
         pred["lower_min_6"] = float(
             bundle.conformal.lower_bound(np.array([pred["pred_min_6"]]))[0]
         )
@@ -335,10 +328,10 @@ class Engine:
             )[0]
         )
 
-        alert = session.alert.step(ts, pred["risk"], current_sim) if advance else {
+        alert = session.alert.step(ts, pred["risk"], baseline) if advance else {
             "state": session.alert.state,
             "new_predictive_alert": False,
-            "reactive_critical": current_sim < policy.red_threshold,
+            "reactive_critical": baseline <= policy.red_threshold,
         }
 
         cooldown_active = (
@@ -349,7 +342,7 @@ class Engine:
         if advance and not cooldown_active:
             plan = plan_replenishment(
                 pred=pred,
-                current_sim=current_sim,
+                current_sim=baseline,
                 observed_cart=baseline,
                 pending_qty=session.book.pending_quantity(),
                 policy=policy,

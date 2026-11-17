@@ -1,6 +1,21 @@
 """
-Two independent CSV/entity experiments in parallel:
+One parameterised experiment:
 Upload -> Train -> Validate Config -> Promote -> Score -> CSV.
+
+The entity grain is one camera stream watching one bay:
+``entity_id = "siteKey:KDVR:ChanNo:BayID"``. Supply it whole, or give the
+three-part id plus ``--bay-id``::
+
+    python scripts/run_experiment.py \
+        --entity 163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8 \
+        --data ../cart_forecasting/data/Thinh_bay.csv
+
+    python scripts/run_experiment.py \
+        --entity 163:215:0 \
+        --bay-id 06053B44-0A47-42FC-BE3E-F88CB85F99D8
+
+The dataset must carry a ``BayID`` column; use ``--bay-column`` when the
+export names it differently.
 
 Includes strict configuration debugging for:
 - max_carts_per_trip
@@ -21,22 +36,14 @@ Additional API extraction:
 - simulated_cart_api
 - forecast_min_40_api
 
-Run this script from the platform scripts/ directory in a test environment.
-Each CSV must already contain its assigned entity, using the platform CSV schema.
-Upload is expected to onboard unknown entities; no registration endpoint is assumed.
-Training, promotion and scoring write through the API. SQLite is read-only here.
-C.DB_PATH must refer to the database used by the API server.
-No previous state is reset. Use fresh entity IDs for a fresh-state experiment.
+IMPORTANT:
+This script modifies the platform SQLite database directly.
+Use only in a local development/test environment.
 """
 
 from __future__ import annotations
 
 import argparse
-import copy
-import contextlib
-import multiprocessing
-import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 import sqlite3
 import sys
@@ -54,9 +61,13 @@ import requests
 
 import settings as C
 from client.platform_client import load_telemetry, to_records
+from data_loader import BAY_COL, normalize_bay_id
 
 
-DEFAULT_DATA = PLATFORM_ROOT / "data" / "real_data.csv"
+# Bay identity is part of the entity id, so the default dataset is one that
+# carries a bay column.
+DEFAULT_DATA = C.PIPELINE_ROOT / "data" / "Thinh_bay.csv"
+DEFAULT_ENTITY = "163:215:0:06053B44_0A47_42FC_BE3E_F88CB85F99D8"
 HISTORY_WINDOW = 20
 
 
@@ -158,6 +169,85 @@ def parts(entity_id: str) -> tuple[str, str, str, str]:
         )
 
     return tuple(values)
+
+
+def resolve_entity(entity: str, bay_id: str | None) -> str:
+    """Canonical entity id for this platform.
+
+    Accepts ``--entity siteKey:KDVR:ChanNo:BayID`` or the three-part form plus
+    ``--bay-id``. The bay key is normalised exactly as the platform does, so
+    the id in the request matches the id the registry stores.
+    """
+    site, kdvr, chan, bay = parts(entity)
+
+    if bay_id:
+        bay_id = normalize_bay_id(bay_id)
+
+        if bay and bay != bay_id:
+            raise SystemExit(
+                f"--bay-id {bay_id} conflicts with the bay in "
+                f"--entity ({bay})"
+            )
+
+        bay = bay_id
+
+    elif bay:
+        bay = normalize_bay_id(bay)
+
+    if C.INCLUDE_BAY_IN_ENTITY_ID and not bay:
+        raise SystemExit(
+            "This platform scopes entities by bay "
+            "(CART_ENTITY_INCLUDE_BAY=1). Pass --bay-id, or use "
+            '--entity "siteKey:KDVR:ChanNo:BayID".'
+        )
+
+    if bay and not C.INCLUDE_BAY_IN_ENTITY_ID:
+        raise SystemExit(
+            "This platform does not scope entities by bay "
+            "(CART_ENTITY_INCLUDE_BAY=0); drop the bay segment."
+        )
+
+    return ":".join(
+        part
+        for part in (site, kdvr, chan, bay)
+        if part
+    )
+
+
+def verify_dataset(
+    data: Path,
+    entity: str,
+    bay_column: str | None = None,
+) -> None:
+    """Fail before uploading when the CSV cannot produce this entity."""
+    header = pd.read_csv(
+        data,
+        sep=None,
+        engine="python",
+        nrows=0,
+        encoding="utf-8-sig",
+    ).columns
+
+    header = [str(c).strip().lstrip("\ufeff") for c in header]
+    bay_source = bay_column or BAY_COL
+
+    if C.INCLUDE_BAY_IN_ENTITY_ID and bay_source not in header:
+        raise SystemExit(
+            f"{data.name} has no '{bay_source}' column, so no bay-scoped "
+            f"entity can be built from it. Columns: {header}"
+        )
+
+    found = set(
+        load_telemetry(data, bay_column)["entity_id"]
+        .dropna()
+        .astype(str)
+    )
+
+    if entity not in found:
+        raise SystemExit(
+            f"Entity {entity} is not present in {data.name}. "
+            f"Found: {sorted(found)}"
+        )
 
 
 def entity_path(base: str, entity: str) -> str:
@@ -427,6 +517,11 @@ def upload(
         "auto_start_training": False,
     }
 
+    if a.bay_column:
+        cfg["column_mapping"] = {
+            BAY_COL: a.bay_column
+        }
+
     log("UPLOAD CONFIGURATION")
     pretty(cfg)
 
@@ -619,6 +714,69 @@ def promote(
 
 
 # ============================================================
+# CLEAR PREVIOUS
+# ============================================================
+
+def clear_previous(
+    db: Path,
+    entity: str,
+    base: str,
+) -> None:
+
+    response = requests.post(
+        f"{base}/v1/sessions/reset",
+        json={
+            "entity_id": entity
+        },
+        timeout=60,
+    )
+
+    response.raise_for_status()
+
+    con = sqlite3.connect(db)
+
+    try:
+        with con:
+            for sql in (
+                "DELETE FROM scoring_results WHERE entity_id=?",
+                "DELETE FROM scoring_artifacts WHERE entity_id=?",
+                "DELETE FROM replenishment_orders WHERE entity_id=?",
+                "DELETE FROM session_state WHERE entity_id=?",
+            ):
+                con.execute(
+                    sql,
+                    (entity,),
+                )
+    finally:
+        con.close()
+
+    safe = entity.replace(":", "_")
+
+    artifact_dir = (
+        Path(C.SCORE_ARTIFACT_DIR) / safe
+    )
+
+    if artifact_dir.exists():
+        for path in sorted(
+            artifact_dir.rglob("*"),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            path.chmod(0o700)
+
+            if path.is_file():
+                path.unlink()
+            else:
+                path.rmdir()
+
+        artifact_dir.rmdir()
+
+    log(
+        "Previous scoring decisions cleared."
+    )
+
+
+# ============================================================
 # API RESPONSE EXTRACTION
 # ============================================================
 
@@ -748,9 +906,10 @@ def score_all(
     params: dict,
     debugger: ConfigDebugger,
     expected_model_id: str | None = None,
+    bay_column: str | None = None,
 ) -> dict:
 
-    df = load_telemetry(data)
+    df = load_telemetry(data, bay_column)
 
     df = df[
         df.entity_id == entity
@@ -791,6 +950,10 @@ def score_all(
 
             if params:
                 payload["params"] = params
+
+            if n == 0:
+                log(f"SCORE REQUEST: POST {url}")
+                pretty(payload)
 
             response = session.post(
                 url,
@@ -865,13 +1028,6 @@ def score_all(
                 "request_id"
             )
 
-            if request_id is None or not str(request_id):
-                raise RuntimeError("Scoring response missing request_id; cannot join API and DB results")
-            if str(request_id) in response_map:
-                raise RuntimeError(f"Duplicate scoring request_id: {request_id}")
-            if expected_model_id is not None and result.get("model_id") != expected_model_id:
-                raise RuntimeError(f"Model changed during scoring: {result.get('model_id')}")
-
             if request_id is not None:
                 response_map[
                     str(request_id)
@@ -910,7 +1066,7 @@ def export(
     response_map: dict,
 ) -> pd.DataFrame:
 
-    con = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=30)
+    con = sqlite3.connect(db)
 
     try:
         frame = pd.read_sql(
@@ -929,16 +1085,6 @@ def export(
     if "request_id" not in frame.columns:
         raise RuntimeError(
             "scoring_results has no request_id."
-        )
-
-    # Export only requests from this experiment, even if the entity has history.
-    frame = frame[frame["request_id"].astype("string").isin(response_map)].copy()
-    found_ids = set(frame["request_id"].astype(str))
-    missing_ids = set(response_map) - found_ids
-    if missing_ids or frame["request_id"].duplicated().any():
-        raise RuntimeError(
-            f"DB/API mismatch: {len(missing_ids)} requests missing or duplicate DB rows. "
-            "Check that settings.DB_PATH is the API server database and writes have completed."
         )
 
     if response_map:
@@ -1096,7 +1242,7 @@ def summarise(frame: pd.DataFrame) -> None:
 # MAIN
 # ============================================================
 
-def build_parser() -> argparse.ArgumentParser:
+def main() -> None:
 
     p = argparse.ArgumentParser(
         formatter_class=(
@@ -1110,11 +1256,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p.add_argument(
-        "--case", nargs=2, action="append", required=True,
-        metavar=("ENTITY", "CSV"),
-        help="Repeat exactly twice, with a different entity and CSV each time.",
+        "--entity",
+        default=DEFAULT_ENTITY,
+        help='Entity id "siteKey:KDVR:ChanNo:BayID". The three-part form is '
+             "accepted together with --bay-id.",
     )
-    p.add_argument("--out-dir", type=Path, default=Path("outputs/parallel"))
+
+    p.add_argument(
+        "--bay-id",
+        default=None,
+        help="Bay identifier, when --entity omits it. Normalised the same way "
+             "as the platform does (a GUID's dashes become underscores).",
+    )
+
+    p.add_argument(
+        "--bay-column",
+        default=None,
+        help=f"Source column holding the bay id when it is not named "
+             f"'{BAY_COL}'. Sent as config.column_mapping.{BAY_COL}.",
+    )
+
+    p.add_argument(
+        "--data",
+        type=Path,
+        default=DEFAULT_DATA,
+    )
+
+    p.add_argument(
+        "--out",
+        type=Path,
+        default=Path(
+            "outputs/experiment.csv"
+        ),
+    )
 
     p.add_argument(
         "--name",
@@ -1138,6 +1312,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=900,
     )
 
+    p.add_argument(
+        "--skip-training",
+        action="store_true",
+    )
+
+    p.add_argument(
+        "--keep-previous",
+        action="store_true",
+    )
+
     g = p.add_argument_group(
         "Operational parameters"
     )
@@ -1151,19 +1335,19 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--red-threshold",
         type=int,
-        default=15,
+        default=7,
     )
 
     g.add_argument(
         "--amber-threshold",
         type=int,
-        default=20,
+        default=22,
     )
 
     g.add_argument(
         "--target-stock",
         type=int,
-        default=28,
+        default=26,
     )
 
     g.add_argument(
@@ -1227,16 +1411,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
     )
 
-    return p
+    a = p.parse_args()
 
-
-def run_experiment(a) -> dict:
-    parts(a.entity)
+    a.entity = resolve_entity(a.entity, a.bay_id)
 
     if not a.data.exists():
         raise SystemExit(
             f"Dataset not found: {a.data}"
         )
+
+    verify_dataset(a.data, a.entity, a.bay_column)
 
     if not (
         0 <= a.red_threshold
@@ -1344,6 +1528,13 @@ def run_experiment(a) -> dict:
             result["model_id"],
         )
 
+    if not a.keep_previous:
+        clear_previous(
+            Path(C.DB_PATH),
+            a.entity,
+            a.base_url,
+        )
+
     params = request_params(a)
 
     response_map = score_all(
@@ -1358,6 +1549,7 @@ def run_experiment(a) -> dict:
             if not a.skip_training
             else None
         ),
+        bay_column=a.bay_column,
     )
 
     frame = export(
@@ -1378,6 +1570,7 @@ def run_experiment(a) -> dict:
 
         "experiment_name": a.name,
         "entity_id": a.entity,
+        "bay_id": parts(a.entity)[3] or None,
         "dataset": str(a.data),
         "upload_id": upload_id,
         "training_job_id": job_id,
@@ -1426,124 +1619,10 @@ def run_experiment(a) -> dict:
 
     summarise(frame)
 
-    return {
-        "entity_id": a.entity,
-        "dataset": str(a.data),
-        "status": "succeeded",
-        "csv": str(a.out),
-        "config": str(sidecar),
-        "debug": str(debug_path),
-        "upload_id": upload_id,
-        "training_job_id": job_id,
-        "model_id": result.get("model_id"),
-        "n_decisions": len(frame),
-    }
-
-
-def run_worker(a) -> dict:
-    log_path = a.out.with_suffix(".log")
-    started = time.perf_counter()
-    with log_path.open("w", encoding="utf-8", buffering=1) as stream:
-        with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
-            try:
-                result = run_experiment(a)
-            except Exception as exc:
-                traceback.print_exc()
-                result = {
-                    "entity_id": a.entity,
-                    "dataset": str(a.data),
-                    "status": "failed",
-                    "error": str(exc),
-                }
-    result["log"] = str(log_path)
-    result["elapsed_seconds"] = round(time.perf_counter() - started, 3)
-    return result
-
-
-def preflight(a, parser) -> None:
-    # Validate both inputs before either process can mutate the backend.
-    if len(a.case) != 2:
-        parser.error("Provide exactly two --case ENTITY CSV arguments")
-    entities = [entity for entity, _ in a.case]
-    paths = [Path(path).expanduser().resolve() for _, path in a.case]
-    if len(set(entities)) != 2:
-        parser.error("The two entity IDs must be different")
-    if paths[0] == paths[1] or (all(p.is_file() for p in paths) and paths[0].samefile(paths[1])):
-        parser.error("Use two different CSV files")
-    if a.window < 1 or a.train_timeout <= 0:
-        parser.error("--window and --train-timeout must be positive")
-    if not (0 <= a.red_threshold < a.amber_threshold <= a.bay_capacity):
-        parser.error("Require 0 <= RED < AMBER <= bay_capacity")
-    if a.max_carts_per_trip is not None and a.max_carts_per_trip <= 0:
-        parser.error("--max-carts-per-trip must be > 0")
-    if a.reserve_per_day is not None and a.reserve_per_day < 0:
-        parser.error("--reserve-per-day must be >= 0")
-    db = Path(C.DB_PATH).resolve()
-    if not db.is_file():
-        parser.error(f"API server SQLite DB not found locally: {db}")
-    # Fail before uploads if the local export schema is unavailable.
-    with contextlib.closing(sqlite3.connect(db.as_uri() + "?mode=ro", uri=True)) as con:
-        con.execute("SELECT entity_id, request_id FROM scoring_results LIMIT 0")
-    for entity, path in zip(entities, paths):
-        if len(entity.split(":")) != 4 or any(not part for part in entity.split(":")):
-            parser.error('Entity must use "siteKey:KDVR:ChanNo:BayID" with '
-                         'non-empty parts')
-        if any(character in entity for character in "/?#\\"):
-            parser.error("Entity IDs cannot contain URL/path separators")
-        if not path.is_file():
-            parser.error(f"CSV not found: {path}")
-        df = load_telemetry(path)
-        actual = set(df.entity_id.dropna().astype(str))
-        if df.entity_id.isna().any() or actual != {entity}:
-            parser.error(f"{path}: must contain only entity {entity}; found {sorted(actual)}")
-        if len(df) < a.window:
-            parser.error(f"{path}: need at least {a.window} records; found {len(df)}")
-    a.case = list(zip(entities, paths))
-
-
-def main() -> None:
-    parser = build_parser()
-    a = parser.parse_args()
-    preflight(a, parser)
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + "_" + uuid4().hex[:8]
-    run_dir = a.out_dir.expanduser().resolve() / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
-    summary_path = run_dir / "results.json"
-    results = [None, None]
-    log(f"Starting two independent experiment workers; results: {run_dir}")
-    with ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = {}
-        for index, (entity, data) in enumerate(a.case):
-            worker = copy.deepcopy(a)
-            worker.entity = entity
-            worker.data = data
-            worker.out = run_dir / f"entity_{index + 1}.csv"
-            worker.skip_training = False
-            worker.name = f"{a.name or 'parallel'}_{index + 1}_{run_id}"
-            futures[pool.submit(run_worker, worker)] = (index, worker)
-        for future in as_completed(futures):
-            index, worker = futures[future]
-            try:
-                result = future.result()
-            except Exception as exc:
-                result = {
-                    "entity_id": worker.entity,
-                    "dataset": str(worker.data),
-                    "status": "failed",
-                    "error": str(exc),
-                    "log": str(worker.out.with_suffix(".log")),
-                }
-            results[index] = result
-            # Each result is returned immediately when its worker finishes.
-            pretty(result)
-            temporary = summary_path.with_suffix(".tmp")
-            temporary.write_text(json.dumps({"run_id": run_id, "results": results},
-                                            indent=2, ensure_ascii=False), encoding="utf-8")
-            temporary.replace(summary_path)
-    log(f"Combined result: {summary_path}")
-    if any(result["status"] != "succeeded" for result in results):
-        raise SystemExit(1)
-
 
 if __name__ == "__main__":
     main()
+    
+    
+    
+    

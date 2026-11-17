@@ -323,17 +323,12 @@ def score(
         session["last_record_time"] = ts
         session["n_calls"] += 1
 
+    # Reported only. Decisions use the camera count and the model-only forecast:
+    # the surplus is carts *assumed* delivered (deliver_due needs no confirmation),
+    # and adding it suppressed risk to ~0 while the bay was actually empty.
     current_sim = observed_inventory(baseline, session["surplus"], inventory)
 
-    # Project the surviving surplus over the horizon using recent traffic only.
-    recent_in = float(feats["Count_IN"].tail(3).mean())
-    projected = session["surplus"]
-    for _ in range(policy.planning_horizon):
-        projected, _c = consume_surplus(projected, baseline, recent_in, duration, inventory)
-
     pred = model.predict_row(X)
-    for k in ("pred_min_6", "pred_min_3", "pred_cart_3", "pred_cart_6"):
-        pred[k] += projected
     pred["lower_min_6"] = float(calib.lower_bound(np.array([pred["pred_min_6"]]))[0])
     pred["risk"] = float(
         calib.exceedance_probability(
@@ -342,12 +337,12 @@ def score(
     )
 
     if advance:
-        alert = session["alert"].step(ts, pred["risk"], current_sim)
+        alert = session["alert"].step(ts, pred["risk"], baseline)
     else:
         alert = {
             "state": session["alert"].state,
             "new_predictive_alert": False,
-            "reactive_critical": current_sim < policy.red_threshold,
+            "reactive_critical": baseline <= policy.red_threshold,
         }
 
     cooldown_active = (
@@ -360,7 +355,7 @@ def score(
     if advance and not cooldown_active:
         plan = plan_replenishment(
             pred=pred,
-            current_sim=current_sim,
+            current_sim=baseline,
             observed_cart=baseline,
             pending_qty=session["book"].pending_quantity(),
             policy=policy,
@@ -384,8 +379,13 @@ def score(
         session["last_decision_time"] = ts
         session["reserve_used_today"] += plan["quantity"]
         session["reserve_day"] = ts.date().isoformat()
+        trigger = (
+            f"risk {pred['risk']:.2f} >= {policy.risk_threshold:.2f}"
+            if pred["risk"] >= policy.risk_threshold
+            else f"observed {baseline:.0f} carts <= red {policy.red_threshold:.0f}"
+        )
         reason = (
-            f"risk {pred['risk']:.2f} >= {policy.risk_threshold:.2f}; predicted 40-minute "
+            f"{trigger}; predicted 40-minute "
             f"minimum {pred['pred_min_6']:.1f} carts against a target of "
             f"{policy.target_stock:.0f}; ordered {plan['quantity']} after netting "
             f"{pending_before:.0f} already in transit"

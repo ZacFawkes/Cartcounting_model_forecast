@@ -573,6 +573,9 @@ def rollback_model(kdvr: int, chan_no: int, req: PromoteRequest,
 def _score_entity(entity_id: str, req: EntityScoreRequest, request: Request,
                   path_kdvr: int, path_chan: int) -> ScoreResponse:
     rid = getattr(request.state, "request_id", None)
+    # Log the URL that was actually called, never a reconstruction of it: the
+    # same handler serves the bay-scoped, site-scoped and legacy routes.
+    endpoint = request.url.path
     if req.kdvr is not None and int(req.kdvr) != int(path_kdvr):
         raise HTTPException(status_code=422,
                             detail=f"body kdvr {req.kdvr} does not match path "
@@ -595,14 +598,14 @@ def _score_entity(entity_id: str, req: EntityScoreRequest, request: Request,
             publish=True,
         )
     except svc.ModelNotReady as exc:
-        logs.log_request(rid, f"/v1/entities/{path_kdvr}/{path_chan}/score", "POST",
+        logs.log_request(rid, endpoint, "POST",
                          "rejected", (time.perf_counter() - t0) * 1000, entity_id,
                          client=req.client, error=str(exc))
         raise HTTPException(status_code=409,
                             detail={"code": "MODEL_NOT_READY", "message": str(exc),
                                     "readiness": exc.readiness})
     except svc.InsufficientHistory as exc:
-        logs.log_request(rid, f"/v1/entities/{path_kdvr}/{path_chan}/score", "POST",
+        logs.log_request(rid, endpoint, "POST",
                          "rejected", (time.perf_counter() - t0) * 1000, entity_id,
                          client=req.client, error=str(exc))
         raise HTTPException(status_code=422, detail=str(exc))
@@ -611,7 +614,7 @@ def _score_entity(entity_id: str, req: EntityScoreRequest, request: Request,
 
     dt = (time.perf_counter() - t0) * 1000
     logs.log_request(
-        rid, f"/v1/entities/{path_kdvr}/{path_chan}/score", "POST", "ok", dt,
+        rid, endpoint, "POST", "ok", dt,
         entity_id, result["site_key"], 200, req.client,
         {"records": len(req.records)},
         {"risk": result["shortage_risk"], "alert_state": result["alert_state"],

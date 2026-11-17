@@ -346,19 +346,18 @@ real demand exceeds real stock, which is rare, so it accumulates:
                        simulated records below RED   35
 ```
 
-`service.py` adds this surplus to the forecast before computing risk, so risk is
-measured on a trajectory holding carts the store may never have received. On
-the full 215:0 stream this pushes measured recall down to ~16% against the
-actual telemetry.
+`service.py` used to add this surplus to the forecast before computing risk,
+which suppressed risk to ~0 while the bay was actually empty. Risk,
+`alert_state`, quantity sizing and capacity headroom now use the **camera
+count and the model-only forecast**; carts still in transit are netted via
+`pending_quantity()`. A camera count at or below RED forces
+`alert_state = CRITICAL` (`reactive_critical = true`).
 
-Treat `simulated_cart` and anything derived from it as a **simulation under an
-assumption**, not as measured stock. `forecast_accuracy` is the only backtest
-that does not depend on it.
+`simulated_cart` is still reported but is now informational only. Treat it as a
+**simulation under an assumption**, not as measured stock.
 
-Closing this gap means gating delivery on `POST /v1/orders/{id}/execute` instead
-of on elapsed lead time. Until then, tuning thresholds has limited effect: a
-lower `risk_threshold` places more orders, which injects more phantom carts,
-which suppresses risk further.
+Gating delivery on `POST /v1/orders/{id}/execute` instead of on elapsed lead
+time would make `simulated_cart` meaningful again.
 
 ---
 

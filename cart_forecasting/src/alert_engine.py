@@ -31,8 +31,9 @@ class AlertEngineConfig:
 class AlertEngine:
     """Stateful alerting with deduplication, cooldown, hysteresis, escalation.
 
-    Observing ``Count < RED`` produces an immediate *reactive* critical alert;
-    those are recorded separately and never credited as predictive warnings.
+    Observing ``Count <= RED`` forces ``state = CRITICAL`` and flags a
+    *reactive* alert; those are recorded separately, never credited as
+    predictive warnings and never start the predictive cooldown.
     """
 
     cfg: AlertEngineConfig = field(default_factory=AlertEngineConfig)
@@ -47,7 +48,7 @@ class AlertEngine:
 
     def step(self, ts: pd.Timestamp, risk: float, observed_cart: float) -> dict:
         cfg = self.cfg
-        reactive = observed_cart < cfg.red_threshold
+        reactive = observed_cart <= cfg.red_threshold
         prev_state = self.state
 
         if risk >= cfg.warning_risk:
@@ -60,9 +61,16 @@ class AlertEngine:
             desired = CRITICAL if risk >= cfg.critical_risk else WARNING
 
         # Hysteresis: stay elevated until risk drops clearly below entry level.
+        # Capped at half the entry level so a small band (e.g. 0.066) cannot
+        # produce a negative exit level that latches WARNING forever.
         if prev_state in (WARNING, CRITICAL) and desired == NORMAL:
-            if risk > cfg.warning_risk - cfg.hysteresis:
+            exit_level = cfg.warning_risk - min(cfg.hysteresis, cfg.warning_risk / 2.0)
+            if risk > exit_level:
                 desired = WARNING
+
+        # An observed bay at or below RED is a shortage now, whatever the forecast.
+        if reactive:
+            desired = CRITICAL
 
         cooldown_active = (
             self.last_alert_time is not None
@@ -76,7 +84,7 @@ class AlertEngine:
         if new_alert and cooldown_active and not escalated:
             new_alert = False
 
-        if new_alert:
+        if new_alert and not reactive:
             self.last_alert_time = ts
 
         self.state = desired

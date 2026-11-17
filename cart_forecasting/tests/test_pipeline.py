@@ -344,6 +344,27 @@ def test_reactive_alerts_are_not_credited_as_predictive():
     assert r["new_predictive_alert"] is False
 
 
+def test_reactive_floor_forces_critical_state_without_cooldown():
+    cfg = AlertEngineConfig(warning_risk=0.3, critical_risk=0.8,
+                            cooldown_min=30.0, red_threshold=5)
+    eng = AlertEngine(cfg)
+    t0 = pd.Timestamp("2026-01-01 10:00")
+    r = eng.step(t0, 0.0, observed_cart=5.0)
+    assert r["state"] == "CRITICAL" and r["reactive_critical"] is True
+    # A later predictive warning is not swallowed by the reactive alert.
+    eng.step(t0 + pd.Timedelta(minutes=5), 0.0, observed_cart=30.0)
+    p = eng.step(t0 + pd.Timedelta(minutes=10), 0.4, observed_cart=30.0)
+    assert p["state"] == "WARNING" and p["new_predictive_alert"] is True
+
+
+def test_hysteresis_cannot_latch_with_small_warning_band():
+    cfg = AlertEngineConfig(warning_risk=0.066, critical_risk=0.26, hysteresis=0.10)
+    eng = AlertEngine(cfg)
+    t0 = pd.Timestamp("2026-01-01 10:00")
+    assert eng.step(t0, 0.10, 30.0)["state"] == "WARNING"
+    assert eng.step(t0 + pd.Timedelta(minutes=5), 0.0, 30.0)["state"] == "NORMAL"
+
+
 def test_warning_lead_time_is_measured_before_onset():
     counts = [40] * 10 + [10] * 3 + [40] * 10
     f = build_features(prepare(_synthetic(counts)))
