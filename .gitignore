@@ -1,10 +1,15 @@
 
 # Data
 *.csv
+*.html
+*.json
 *.tsv
 *.xlsx
 *.xls
 *.parquet
+
+# Local platform databases
+cart_platform/data/*.db
 
 ## Database
 #*.db

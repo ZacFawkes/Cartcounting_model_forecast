@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+
+# User-specific
+*.user
+*.suo
+.vs/
+
+# Local secrets - never commit a connection string or token
+appsettings.Local.json
+*.env

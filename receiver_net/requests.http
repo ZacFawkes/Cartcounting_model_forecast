@@ -1,0 +1,213 @@
+### Cart Result Receiver (.NET) - sample requests
+### Open in VS Code (REST Client), Rider or Visual Studio and click "Send".
+
+@host = http://127.0.0.1:8200
+@token = 
+
+### Health -------------------------------------------------------------------
+GET {{host}}/health
+
+### Training event (201 created; resend the identical body for 200 replay) ----
+POST {{host}}/v1/results/training
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:training:candidate_ready:v1",
+  "event_type": "training.completed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-13T04:33:53.120Z",
+  "entity_id": "300:2",
+  "site_key": "177",
+  "upload_id": "upl_20261013_002b9ca1",
+  "job_id": "train_20261013043353_8cef49",
+  "model_id": "mdl_300_2_20261013035036_c1f270",
+  "payload": {
+    "status": "candidate_ready",
+    "config_hash": "549777393e8a3846",
+    "metrics": { "mae": 3.41, "rmse": 5.02, "rows": 18420 },
+    "effective_config_at_training": { "horizon_min": 40, "bay_capacity": 120 }
+  }
+}
+
+### Backtest event - payload.backtest_type is mandatory (422 without it) ------
+POST {{host}}/v1/results/backtest
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:policy_replay:completed:v1",
+  "event_type": "backtest.completed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-13T04:34:30.462Z",
+  "entity_id": "300:2",
+  "site_key": "177",
+  "upload_id": "upl_20261013_002b9ca1",
+  "job_id": "train_20261013043353_8cef49",
+  "model_id": "mdl_300_2_20261013035036_c1f270",
+  "payload": {
+    "backtest_type": "policy_replay",
+    "report_id": "bt-300_2-20261013-043430-ab12c",
+    "status": "completed",
+    "config_hash": "549777393e8a3846",
+    "frozen_model_config": { "red_model": 25, "amber_model": 35 },
+    "effective_operational_config": {
+      "red_threshold": 25, "amber_threshold": 35,
+      "bay_capacity": 120, "target_stock": 50, "lead_time_min": 10.0
+    },
+    "metrics": { "alerts": 14, "trips": 7, "carts": 124 },
+    "caveat": "simulation estimate, conditional on assumptions"
+  }
+}
+
+### Calibration event ---------------------------------------------------------
+POST {{host}}/v1/results/calibration
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:calibration:completed:v1",
+  "event_type": "calibration.completed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-13T04:35:01.000Z",
+  "entity_id": "300:2",
+  "site_key": "177",
+  "job_id": "train_20261013043353_8cef49",
+  "model_id": "mdl_300_2_20261013035036_c1f270",
+  "payload": {
+    "calibrator_id": "cal_300_2_20261013043501",
+    "status": "completed",
+    "scope": "entity",
+    "method": "isotonic",
+    "metrics": { "brier": 0.081, "ece": 0.019 }
+  }
+}
+
+### Scoring event -------------------------------------------------------------
+POST {{host}}/v1/results/scoring
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "event_id": "score_300_2_20261013T050000Z_mdl_c1f270",
+  "event_type": "scoring.recorded",
+  "schema_version": 1,
+  "occurred_at": "2026-10-13T05:00:00.000Z",
+  "entity_id": "300:2",
+  "site_key": "177",
+  "model_id": "mdl_300_2_20261013035036_c1f270",
+  "payload": {
+    "request_id": "req_5f2c91",
+    "decision_time": "2026-10-13T05:00:00.000Z",
+    "current_cart": 42.0,
+    "simulated_cart": 41.0,
+    "forecast": {
+      "cart_at_20min": 33.5,
+      "cart_at_40min": 27.1,
+      "min_within_20min": 31.0,
+      "min_within_40min": 24.8,
+      "lower_bound_min_within_40min": 19.2
+    },
+    "shortage_risk": 0.37,
+    "alert_state": "amber",
+    "action": { "should_replenish": true, "quantity": 20 },
+    "calibration_id": "cal_300_2_20261013043501",
+    "scored_at": "2026-10-13T05:00:00.350Z"
+  }
+}
+
+### Conflict demo: same event_id, different payload -> 409 --------------------
+POST {{host}}/v1/results/training
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:training:candidate_ready:v1",
+  "event_type": "training.completed",
+  "entity_id": "300:2",
+  "payload": { "status": "candidate_ready", "metrics": { "mae": 9.99 } }
+}
+
+### Reads ---------------------------------------------------------------------
+GET {{host}}/v1/results/training?entity_id=300:2&limit=10
+
+###
+GET {{host}}/v1/results/backtest?entity_id=300:2&backtest_type=policy_replay
+
+###
+GET {{host}}/v1/results/scoring?entity_id=300:2&since=2026-10-13T00:00:00Z&limit=100
+
+###
+GET {{host}}/v1/results/entities/300:2
+
+###
+GET {{host}}/v1/results/events/train_20261013043353_8cef49:300:2:training:candidate_ready:v1
+
+
+### ==========================================================================
+### SENDER SIDE - Cart Result Publisher (durable outbox), default port 8300
+### ==========================================================================
+
+@pub = http://127.0.0.1:8300
+
+### Publisher health: queue depth, worker state, receiver target -------------
+GET {{pub}}/health
+
+### Enqueue an event for durable delivery (202 queued, 200 duplicate) --------
+POST {{pub}}/v1/integrations/outbox
+Content-Type: application/json
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:training:candidate_ready:v1",
+  "event_type": "training.completed",
+  "schema_version": 1,
+  "occurred_at": "2026-10-13T04:33:53.120Z",
+  "entity_id": "300:2",
+  "site_key": "177",
+  "upload_id": "upl_20261013_002b9ca1",
+  "job_id": "train_20261013043353_8cef49",
+  "model_id": "mdl_300_2_20261013035036_c1f270",
+  "payload": {
+    "status": "candidate_ready",
+    "config_hash": "549777393e8a3846",
+    "metrics": { "mae": 3.41, "rmse": 5.02, "rows": 18420 }
+  }
+}
+
+### Same event_id again -> 200 duplicate_suppressed, nothing queued twice ----
+POST {{pub}}/v1/integrations/outbox
+Content-Type: application/json
+
+{
+  "event_id": "train_20261013043353_8cef49:300:2:training:candidate_ready:v1",
+  "event_type": "training.completed",
+  "entity_id": "300:2",
+  "payload": { "status": "candidate_ready" }
+}
+
+### Queue state: counts, worker_running, recent events -----------------------
+GET {{pub}}/v1/integrations/outbox
+
+###
+GET {{pub}}/v1/integrations/outbox?status=dead_letter&limit=20
+
+###
+GET {{pub}}/v1/integrations/outbox?entity_id=300:2&event_type=training.completed
+
+### One queued event with its delivery history ------------------------------
+GET {{pub}}/v1/integrations/outbox/train_20261013043353_8cef49:300:2:training:candidate_ready:v1
+
+### Deliver a batch now, without waiting for the worker ----------------------
+POST {{pub}}/v1/integrations/outbox/flush
+
+### Requeue every dead letter, then flush ------------------------------------
+POST {{pub}}/v1/integrations/outbox/retry
+Content-Type: application/json
+
+{}
+
+### Requeue one dead letter --------------------------------------------------
+POST {{pub}}/v1/integrations/outbox/retry
+Content-Type: application/json
+
+{ "event_id": "train_20261013043353_8cef49:300:2:training:candidate_ready:v1" }
