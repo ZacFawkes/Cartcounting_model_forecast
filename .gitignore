@@ -3,6 +3,10 @@
 *.csv
 *.html
 *.json
+# Required receiver service configuration
+!receiver_net/src/PublisherHost/appsettings.json
+!receiver_net/src/ReceiverNet/appsettings.json
+!receiver_net/src/ReceiverNet/appsettings.Development.json
 *.tsv
 *.xlsx
 *.xls
